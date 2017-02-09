@@ -248,6 +248,16 @@ void MainWindow::slot_updateImg()
     m_frame->copyTo(*m_rawframe);
 
     //ROI frame
+    /// ROI valid revise
+    if(m_ROI->x + m_ROI->width > m_frame->cols)
+    {
+        m_ROI->width = m_frame->cols-m_ROI->x;
+    }
+    if(m_ROI->y + m_ROI->height > m_frame->rows)
+    {
+        m_ROI->height = m_frame->rows-m_ROI->y;
+    }
+
     *m_bwframe = m_cy->resize2bw(*m_frame);
     *m_bwframe = (*m_bwframe)(*m_ROI);
     *m_roiframe = *m_bwframe;   //m_roiframe should be Binary img
@@ -292,6 +302,7 @@ void MainWindow::slot_mainProc()
         ui->scrollAreaResult->setWidget(m_imgResultLabel);
 
         /// Rad table
+        ui->tableResult->clearContents();
         for(int i=0; i<m_cy->get_voutf().length(); i++)
         {
             setTable(i, m_cy->get_voutf()[i].x, m_cy->get_voutf()[i].y);
@@ -308,6 +319,11 @@ void MainWindow::slot_setROI(int value)
     QString strName;
     strName = this->sender()->objectName();
     qDebug()<<strName;
+
+    /// Value valid check step 1
+    if(value<0)
+        value = 0;
+
     if(strName == "spinBoxTop")
     {
         m_ROI->y = value;
@@ -328,7 +344,6 @@ void MainWindow::slot_setROI(int value)
     {
         qDebug()<<"set ROI error!";
     }
-
 }
 
 void MainWindow::setTable(int id, double x, double y)

@@ -192,6 +192,9 @@ int cy::mapScale(double realScale, cv::Point pinMax, double L, double H)
 */
 QVector<Point> cy::pointPixSort(QVector<cv::Point> &vin)
 {
+    if(vin.length()<=2)
+        return vin;
+
     Point startPoint;
     QVector<cv::Point> vout(vin.length());
     startPoint = vin[0];
