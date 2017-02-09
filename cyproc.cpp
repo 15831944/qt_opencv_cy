@@ -1,12 +1,8 @@
 #include "cyproc.h"
 #include "globalParam.h"
 #include <iostream>
-#include <cstdio>
 #include <opencv2/opencv.hpp>
-
 using namespace std;
-
-
 
 /*
 *	@brief : 边缘减圆
@@ -34,7 +30,6 @@ cv::Mat circleSub(cv::Mat& imgbw, int r)
     }
     return img;
 }
-
 
 /*
 *	@brief : 四方向二值图边缘检测
@@ -81,7 +76,6 @@ cv::Mat edgesbw(cv::Mat imgbw)
     }
     return img;
 }
-
 
 /*
 *	@brief : 在Mat变量中寻找第一个value值，返回其坐标
@@ -136,7 +130,6 @@ cv::Point findValueStore(const cv::Mat &mat, uchar value)
     return rad;
 }
 
-
 /*
 *	@brief : S形状路线,在Mat变量中寻找第一个value值，返回其坐标,可以储蓄上一个点的raw值作为下一个的开始点，减少时间复杂度
 *	@note : 坐标为point类型
@@ -154,12 +147,12 @@ cv::Point findValueStoreS(const cv::Mat &mat, uchar value)
     const uchar *p;
     for (i = lastLine; i < mat.rows; i++)
     {
-        if (i == mat.rows - 1)//find in last line
+        if (i == mat.rows - 1)  //find in last line
             lastLine = 0;
         else
             lastLine = i;
 
-        //Derection control
+        /// Derection control
         if(i == lastPoint.y)
         {
             now_dir = last_dir;
@@ -186,7 +179,7 @@ cv::Point findValueStoreS(const cv::Mat &mat, uchar value)
 }
 
 /*
- * @brief: find with direction
+ * @brief: 带方向参数find函数
  *         range: [first, last)
 */
 template<typename T>
@@ -214,8 +207,6 @@ const T* findDir(const T* _first, const T* _last, T val, bool back)
     return _last;
 }
 
-
-
 /*
 *	@brief :画一个实心圆
 *	@note :
@@ -226,10 +217,3 @@ cv::Mat plotc(cv::Mat& img, cv::Point rad, int r)
     cv::circle(img, rad, r, cv::Scalar(255, 255, 255), -1);
     return img;
 }
-
-
-
-
-
-
-

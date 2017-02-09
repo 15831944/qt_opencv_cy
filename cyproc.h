@@ -2,7 +2,6 @@
 #define __CYPROC_H
 #include <opencv2/opencv.hpp>
 
-
 cv::Mat edgesbw(cv::Mat imgbw);
 cv::Mat circleSub(cv::Mat& img, int r);
 cv::Point findValue(const cv::Mat &mat, uchar value);

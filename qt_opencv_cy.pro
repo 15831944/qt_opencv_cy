@@ -30,7 +30,6 @@ SOURCES += main.cpp\
 
 HEADERS  += mainwindow.h \
     cyproc.h \
-    delay.h \
     globalParam.h \
     chongya.h
 

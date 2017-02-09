@@ -2,9 +2,7 @@
 #include <opencv2/opencv.hpp>
 #include "cyproc.h"
 #include "globalParam.h"
-#include "delay.h"
 #include "chongya.h"
-//#include <set>
 #include <float.h>
 #include <QVector>
 #include <QDebug>
@@ -13,31 +11,41 @@ using namespace std;
 using namespace cv;
 
 /// Resize img's rows and cols
-int imgRows = 320;
-int imgCols = 240;
-double imgFactor = 1.3; // 图像比例
 
-/// ROI
-int CY_ROI_x = 0;	//检测区域左上坐标x
-int CY_ROI_y = 0;	//检测区域左上坐标y
-int CY_ROI_L = 320;	//检测区域长度L
-int CY_ROI_H = 240;	//检测区域高度H
-
-/// Global parameter definition
-int CY_bw_thresh = 127;		//灰度阈值
-int CY_r = 20;				// 冲孔半径
-int CY_maxStep = 400;		// 单次最大冲孔数量
-int CY_delta = 0;			// 冲孔间距
-int CY_dist = 0;			// 随边间距
-int CY_img_invert = 0;		// 反色选择
-
-Point_<double> RadArray[400+1];
-Point RadArrayInt[400+1];
 
 /*
- * @brief: main process
+ *  @brief : 构造函数，执行初始化参数
+*/
+cy::cy()
+{
+    cyVarInit();
+    std::cout<<"This is a cy test!"<<std::endl;
+}
+
+/*
+ * @brief: 变量初始化
+*/
+void cy::cyVarInit()
+{
+    /// ROI
+    CY_ROI_x = 0;	//检测区域左上坐标x
+    CY_ROI_y = 0;	//检测区域左上坐标y
+    CY_ROI_L = 320;	//检测区域长度L
+    CY_ROI_H = 240;	//检测区域高度H
+
+    /// CY related
+    CY_bw_thresh = 127;		//灰度阈值
+    CY_r = 20;				// 冲孔半径
+    CY_maxStep = 400;		// 单次最大冲孔数量
+    CY_delta = 0;			// 冲孔间距
+    CY_dist = 0;			// 随边间距
+    CY_img_invert = 0;		// 反色选择
+}
+
+/*
+ * @brief: 主处理
  * @param:
- *      img: opencv binary img
+ *      img: opencv二值化图像
 */
 cv::Mat cy::chongya(cv::Mat& img)
 {
@@ -71,43 +79,39 @@ cv::Mat cy::chongya(cv::Mat& img)
 	img = img | circleSub(imgEdge, CY_r+ CY_dist);
 
     /// 主处理循环，获得像素坐标点集合
-    int i;
 	Point rad;
-    for (i = 0; i < CY_maxStep; i++)
+    vout.clear();
+    for (int i = 0; i < CY_maxStep; i++)
 	{
         /// 检测是否存在有效圆心区域，
         /// 若存在，获取一像素坐标；若不存在，退出处理循环
         rad = findValueStore(img, IMGBW_BLACK);
-//        rad = findValueStoreS(img, IMGBW_BLACK);
         if (rad.x<0 || rad.y<0) break;
 
         /// 像素坐标数组
-        RadArrayInt[i] = rad;
+        vout.append(rad);
 
         /// 减圆操作 (半径为：2r+delta)
 		plotc(img, rad, 2*CY_r+CY_delta);
 		imgEdge = edgesbw(img);
 	}
-    ///添加结束点标志位,得到点集有效个数
-    RadArray[i] = Point(-1, -1);
-    numOfPoints = i;
+    ///得到点集有效个数
+    numOfPoints = vout.length();
 
     ///冲压顺序排序（像素点）
-    pointPixSort(RadArrayInt, numOfPoints);
-
+    vout = pointPixSort(vout);
 
     ///结果显示
     voutf.clear();
     for(int j=0; j<numOfPoints; j++)
     {
         /// 坐标映射与输出
-        RadArray[j] = mapPoint(RadArrayInt[j], Point(img.cols, img.rows), CY_ROI_x, CY_ROI_y, CY_ROI_L, CY_ROI_H);
-        voutf.append(mapPoint(RadArrayInt[j], Point(img.cols, img.rows), CY_ROI_x, CY_ROI_y, CY_ROI_L, CY_ROI_H));
-        cout << RadArray[j] << endl;
+        voutf.append(mapPoint(vout[j], Point(img.cols, img.rows), CY_ROI_x, CY_ROI_y, CY_ROI_L, CY_ROI_H));
+        cout << voutf[j] << endl;
         /// 冲压结果画圆
-        cv::circle(img_raw, RadArrayInt[j], CY_r, cv::Scalar(255, 255, 255), 1);
+        cv::circle(img_raw, vout[j], CY_r, cv::Scalar(255, 255, 255), 1);
         /// 顺序显示
-        cv::putText(img_raw, String(to_string(j+1)), RadArrayInt[j]-cv::Point(CY_r/5.0, -CY_r/5.0), CV_FONT_HERSHEY_COMPLEX, CY_r*2.0/CY_r_Max, Scalar(255, 0, 0), 1, cv::LINE_AA);
+        cv::putText(img_raw, String(to_string(j+1)), vout[j]-cv::Point(CY_r/5.0, -CY_r/5.0), CV_FONT_HERSHEY_COMPLEX, CY_r*2.0/CY_r_Max, Scalar(255, 0, 0), 1, cv::LINE_AA);
     }
 
     /// 总个数显示
@@ -130,6 +134,9 @@ cv::Mat cy::resize2bw(cv::Mat& imgin)
 	Mat imgout(imgin);
 
 #ifdef IMG_RESIZE
+    int imgRows = 320;
+    int imgCols = 240;
+    double imgFactor = 1.3; // 图像比例
 	if (imgin.cols > imgCols)
 	{
 		imgFactor = double(imgin.cols) / imgin.rows;
@@ -178,58 +185,15 @@ int cy::mapScale(double realScale, cv::Point pinMax, double L, double H)
     pixScale = realScale*scaleFactor;
     return pixScale;
 }
-
-
 /*
- * @brief: 冲孔圆心排序
- *         选择一个起点，在剩余点中选出几何距离最近的点，作为输出的下一个点和新的起点，重复此步骤至点集空
- * @param:
- *          rawPoint:输入点集
- *          n: 点集元素个数
- * @note: 此函数将改变输入点集
+ *  @brief : 像素点排序
+ *  @param :
+ *          vin : 像素点的引用
 */
-template <typename T>
-T* cy::pointSort(T *rawPoint, int n)
+QVector<Point> cy::pointPixSort(QVector<cv::Point> &vin)
 {
-    /// Array to QVector
-    QVector<T> vin(n);
-    qCopy(rawPoint, rawPoint+n, vin.begin());
-    QVector<T> vout;
-
-    T startPoint;
-    startPoint = vin[0];
-    vout.append(startPoint);
-    vin.erase(&vin[0]);
-
-    while(vin.length()>0)
-    {
-        double distMin = INT_MAX;
-        int indexDistMin = 0;
-        for(int i=0; i<vin.length(); i++)
-        {
-            double dist = pow(vin[i].x-startPoint.x, 2)+pow(vin[i].y-startPoint.y, 2);
-            if(dist<distMin)
-            {
-                distMin = dist;
-                indexDistMin = i;
-            }
-        }
-        startPoint = vin[indexDistMin];  //由于迭代器的更新，保留startPoint的数值
-        vout.append(startPoint);
-        vin.erase(&vin[indexDistMin]);
-    }
-    qCopy(vout.begin(), vout.begin()+vout.length(), rawPoint);
-    return rawPoint;
-}
-
-
-QVector<Point> cy::pointPixSort(Point *rawPoint, int n)
-{
-    /// Array to QVector
-    QVector<Point> vin(n);
-    qCopy(rawPoint, rawPoint+n, vin.begin());
-
     Point startPoint;
+    QVector<cv::Point> vout(vin.length());
     startPoint = vin[0];
     vout.clear();
     vout.append(startPoint);
@@ -252,64 +216,8 @@ QVector<Point> cy::pointPixSort(Point *rawPoint, int n)
         vout.append(startPoint);
         vin.erase(&vin[indexDistMin]);
     }
-    qCopy(vout.begin(), vout.begin()+vout.length(), rawPoint);
-
-    return vout;
-}
-
-cy::cy()
-{
-    std::cout<<"This is a cy test!"<<std::endl;
+    vin = vout;
+    return vin;
 }
 
 
-
-
-/*
-%% 算法原理
-%{
-#1 得到扫描二值图
-#2 按照半径内缩腐蚀，得到首个圆心区域
-#3 检测圆心区域是否存在，否则退出
-#4 在圆形区域边缘左侧选取一点P，打印P点坐标
-#5 减去P点圆心，2r半径的圆，得到新的圆心区域，重复#3, 4, 5步骤
-%}
-*/
-
-/*
-NOTE :
-opencv 中的位操作都是用0和255来代表逻辑值不是0和1
-
----还有很多可以优化的地方---
-1.现在的二值化采取的是简单的灰度化的值，特征值是亮度，太过单一，分化度不高
-	如果将图像转化到HSV或者YCrCb色域上，通过三个通道的阈值进行二值化可以达到到比较好的分化，
-	肤色提取也可用此方法，效果中等偏上
-
-2.二值化后需要一系列的边缘缩进和寻找白点（或者黑点），现在采取简单的从头遍历，但是事实上应该
-	可以保存上一次找到的点，作为此次的遍历开始点，可以降低时间复杂度
-
-3.在进行二值图边缘提取的时候有一点特别需要注意：
-	opencv中的提取边缘函数有个问题就是存在"与运算缩扩"
-	即：提取的边缘与原图像（或原图像的取反）进行与运算，---（*）
-	得到的图像再次进行（*）操作，图像的黑色（或者白色）会不断的缩进或者扩展
-	导致得到错误低效的坐标点，这应该是因为opencv的边缘提取基本上都是以求导预算为基本运算得到
-	边缘的，所以写了一个自己的‘四方向二值图边缘检测’【cv::Mat edgesbw(cv::Mat imgbw)】克服这种现象。
-
-
-4.现在的程序都是以圆形为冲压图像的，但是转化到无旋转的正方形和正六边形原理是不变的，是需要改少量的代码，
-	就是边缘缩进的代码需要修改（原理在纸质推导上）
-
-5.关于上下左右边缘的处理还不太清楚具体要求，但是如果要把这四个边缘考虑到随边缩进来，只要在得到二值图后把
-二值图的上下左右四个行/列的颜色置为白色值（不是材料的颜色值）就可以了，在opencv中简单几条语句就可以实现。
-
-6.程序仓促有很多要优化的地方。。。
-
-*/
-
-/*
-{
-1.原始，从左到右
-2.采用s形状路线
-3.欧几里得距离 ->目前暂时采用这种
-}
-*/

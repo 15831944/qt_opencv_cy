@@ -9,8 +9,6 @@
 #include <QTimer>
 #include <chongya.h>
 
-
-
 namespace Ui {
 class MainWindow;
 }
