@@ -188,33 +188,6 @@ void MainWindow::slot_setHValue(int value)
     m_cy->set(_CY_ROI_H, value);
 }
 
-void MainWindow::setImgLabel(const QString &fileName)
-{
-//    qDebug()<<fileName;
-
-    cv::VideoCapture vid;
-
-    if(!vid.open(0))
-    {
-        qDebug()<<"Can not open CAM!";
-        return;
-    }
-
-    cv::Mat frame;
-    vid>>frame;
-    cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
-    QImage img(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888);
-    vid.release();
-
-    if (img.isNull())
-    {
-        qDebug()<<"Image is NULL!";
-    }
-
-    m_imgLabel->setPixmap(QPixmap::fromImage(img));
-    ui->scrollArea->setWidget(m_imgLabel);
-}
-
 void MainWindow::slot_openCam()
 {
 
@@ -249,6 +222,10 @@ void MainWindow::slot_updateImg()
 
     //ROI frame
     /// ROI valid revise
+    if(m_ROI->x>m_frame->cols)
+        m_ROI->x = m_frame->cols;
+    if(m_ROI->y>m_frame->rows)
+        m_ROI->y = m_frame->rows;
     if(m_ROI->x + m_ROI->width > m_frame->cols)
     {
         m_ROI->width = m_frame->cols-m_ROI->x;
@@ -267,10 +244,10 @@ void MainWindow::slot_updateImg()
 //    qDebug()<<m_ROI->x<<","<<m_ROI->y<<","<<m_ROI->width<<","<<m_ROI->height;
 
     cv::cvtColor(*m_frame, *m_frame, cv::COLOR_RGB2BGR);
-    QImage img(m_frame->data, m_frame->cols, m_frame->rows, m_frame->step, QImage::Format_RGB888);
+    QImage img(m_frame->data, m_frame->cols, m_frame->rows, int(m_frame->step), QImage::Format_RGB888);
 
     cv::cvtColor(*m_bwframe, *m_bwframe, cv::COLOR_GRAY2BGR);
-    QImage imgbw(m_bwframe->data, m_bwframe->cols, m_bwframe->rows, m_bwframe->step, QImage::Format_RGB888);
+    QImage imgbw(m_bwframe->data, m_bwframe->cols, m_bwframe->rows, int(m_bwframe->step), QImage::Format_RGB888);
 
     if (img.isNull() || imgbw.isNull())
     {
@@ -297,7 +274,7 @@ void MainWindow::slot_mainProc()
 
         ///Display result
         cv::cvtColor(resultFrame, resultFrame, cv::COLOR_GRAY2BGR);
-        QImage imgResult(resultFrame.data, resultFrame.cols, resultFrame.rows, resultFrame.step, QImage::Format_RGB888);
+        QImage imgResult(resultFrame.data, resultFrame.cols, resultFrame.rows, int(resultFrame.step), QImage::Format_RGB888);
         m_imgResultLabel->setPixmap(QPixmap::fromImage(imgResult));
         ui->scrollAreaResult->setWidget(m_imgResultLabel);
 

@@ -20,7 +20,6 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    void setImgLabel(const QString &fileName);
     inline cv::Mat* getImg(){return m_frame;}
     void setTable(int id, double x, double y);
 

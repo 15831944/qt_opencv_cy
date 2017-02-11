@@ -93,7 +93,7 @@ cv::Point findValue(const cv::Mat &mat, uchar value)
         if ((p=std::find(row, row + mat.cols, value)) != row + mat.cols)
         {
             rad.y = i;
-            rad.x = p - row;
+            rad.x = int(p - row);
             return rad;
         }
     }
@@ -123,7 +123,7 @@ cv::Point findValueStore(const cv::Mat &mat, uchar value)
         if ((p = std::find(row, row + mat.cols, value)) != row + mat.cols)
         {
             rad.y = i;
-            rad.x = p - row;
+            rad.x = int(p - row);
             return rad;
         }
     }
@@ -170,7 +170,7 @@ cv::Point findValueStoreS(const cv::Mat &mat, uchar value)
         if ((p = findDir(row, row + mat.cols, value, now_dir)) != row + mat.cols)
         {
             rad.y = i;
-            rad.x = p - row;
+            rad.x = int(p - row);
             lastPoint = rad;
             return rad;
         }
