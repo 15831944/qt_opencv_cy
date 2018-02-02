@@ -1,11 +1,27 @@
-#include "mainwindow.h"
-#include "ui_mainwindow.h"
-#include "globalParam.h"
-#include <QDebug>
+﻿#include <QDebug>
 #include <qimagereader.h>
 #include <QMessageBox>
 #include <opencv2/opencv.hpp>
-#include "chongya.h"
+#include "mainwindow.h"
+#include "ui_mainwindow.h"
+#include "globalParam.h"
+#include "cy_preproc.h"
+#include "cy_algorithm.h"
+#include "cy_performance.h"
+
+/*
+* @def DEBUG_USE_VID
+* @brief Use VIDEO or TEST IMAGES
+* if DEBUG_USE_VID is defined, VIDEO is used as sources.
+* else TEST IMAGES is used as sources.
+*
+* @note Used in function:slot_updateImg()
+* @see slot_updateImg()
+*/
+//#define DEBUG_USE_VID	
+
+unsigned int IMG_INDEX = 1; //<Test images index
+
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -18,7 +34,7 @@ MainWindow::MainWindow(QWidget *parent) :
     TrackbarRorE_value = 0;
 
     //Alocate memery
-    m_cy = new cy;
+    m_cy = new cy_preproc;
     m_vid = new cv::VideoCapture;
     m_frame = new cv::Mat;
     m_rawframe = new cv::Mat;
@@ -35,13 +51,13 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->spinBoxButton, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
     connect(ui->spinBoxLeft, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
     connect(ui->spinBoxRight, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
-    ui->spinBoxTop->setValue(0);
-    ui->spinBoxLeft->setValue(0);
-    ui->spinBoxButton->setValue(300);
-    ui->spinBoxRight->setValue(400);
+    ui->spinBoxTop->setValue(271);
+    ui->spinBoxLeft->setValue(77);
+    ui->spinBoxButton->setValue(301);
+    ui->spinBoxRight->setValue(843);
 
     //Timer init
-    m_timer->setInterval(30);
+    m_timer->setInterval(30);	//<frame interval:30ms
     connect(m_timer, SIGNAL(timeout()), this, SLOT(slot_updateImg()));
     connect(m_timer, SIGNAL(timeout()), this, SLOT(slot_mainProc()));
 
@@ -54,6 +70,21 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->spinBoxY->setMaximum(CY_ROI_y_Max);
     ui->spinBoxL->setMaximum(CY_ROI_L_Max);
     ui->spinBoxH->setMaximum(CY_ROI_H_Max);
+    //Frame rate
+    ui->sliderFrameRate->setMaximum(1000);
+    ui->sliderFrameRate->setMinimum(30);
+    //Hough value
+    ui->sliderHoughValue->setMaximum(180);
+    ui->sliderHoughValue->setMinimum(100);
+    //Algorithm type
+    ui->comboBoxAlgoChoose->addItem(tr("I-CY(Circle)-0"), 0);
+    ui->comboBoxAlgoChoose->addItem(tr("H-CY(Circle)-1"), 1);
+    ui->comboBoxAlgoChoose->addItem(tr("H-CY(Poly)-2"), 2);
+    ui->comboBoxAlgoChoose->addItem(tr("H-CY(Rect)-3"), 3);
+    ui->comboBoxAlgoChoose->addItem(tr("H-W-CY(Circle)-4"), 4);
+    ui->comboBoxAlgoChoose->addItem(tr("I-W-CY(AllShape)-5"), 5);
+    AlgorithmType = 1;	//<default algorithm type
+    ui->comboBoxAlgoChoose->setCurrentIndex(AlgorithmType);
 
     //Table
     ui->tableResult->setRowCount(400);
@@ -73,6 +104,12 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->spinBoxY, SIGNAL(valueChanged(int)), this, SLOT(slot_setYValue(int)));
     connect(ui->spinBoxL, SIGNAL(valueChanged(int)), this, SLOT(slot_setLValue(int)));
     connect(ui->spinBoxH, SIGNAL(valueChanged(int)), this, SLOT(slot_setHValue(int)));
+    //Frame rate
+    connect(ui->sliderFrameRate, SIGNAL(valueChanged(int)), this, SLOT(slot_setFrameRate(int)));
+    //Hough value
+    connect(ui->sliderHoughValue, SIGNAL(valueChanged(int)), this, SLOT(slot_setHoughValue(int)));
+    //Algorithm type
+    connect(ui->comboBoxAlgoChoose, SIGNAL(currentIndexChanged(int)), this, SLOT(slot_setAlgoType(int)));
 
     //Set initial value
     ui->sliderThresh->setValue(127);
@@ -83,6 +120,10 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->spinBoxY->setValue(0);
     ui->spinBoxL->setValue(320);
     ui->spinBoxH->setValue(240);
+    //Frame Rate
+    ui->sliderFrameRate->setValue(200);
+    //Hough value
+    ui->sliderHoughValue->setValue(150);
 
     slot_openCam();
 }
@@ -109,13 +150,13 @@ void MainWindow::slot_Exit()
 void MainWindow::slot_Proc()
 {
     TrackbarVorP_value = 1;
-//    qDebug()<<"TrackbarVorP_value: "<<TrackbarVorP_value;
+	//qDebug()<<"TrackbarVorP_value: "<<TrackbarVorP_value;
+    IMG_INDEX++;
 }
 
 void MainWindow::slot_setThreshValue(int value)
 {
     QString str;
-//    m_cy->CY_bw_thresh = value;
     m_cy->set(_CY_bw_thresh, value);
     str = str.number(value);
     ui->labelThreshValue->setText(str);
@@ -124,36 +165,66 @@ void MainWindow::slot_setThreshValue(int value)
 void MainWindow::slot_setHoleRValue(int value)
 {
     QString str;
-//    m_cy->CY_r = value;
     m_cy->set(_CY_r, value);
     str = str.number(value);
     ui->labelHoleRValue->setText(str);
 }
 
+void MainWindow::slot_setFrameRate(int value)
+{
+    QString str;
+    m_timer->setInterval(value);
+    str = str.number(value);
+    ui->labelFrameRateValue->setText(str);
+}
+
+void MainWindow::slot_setHoughValue(int value)
+{
+    QString str;
+    m_cy->CY_houghValue = value;
+    str = str.number(value);
+    ui->labelHoughValue->setText(str);
+}
+
+/** set Algorithm Type */
+void MainWindow::slot_setAlgoType(int value)
+{
+    AlgorithmType = value;
+    std::cout<<"Algo type :"<<value<<std::endl;
+}
+
+/** update Algorithm time */
+void MainWindow::updateAlgoTime(int value)
+{
+    QString str;
+    str = str.number(value);
+    str += " ms";
+    ui->labelAlgoTimeValue->setText(str);
+}
+
+/** Image color invert */
 void MainWindow::slot_Invert(bool checked)
 {
     if(checked)
-//        m_cy->CY_img_invert = 1;
         m_cy->set(_CY_img_invert, 1);
     else
-//        m_cy->CY_img_invert = 0;
         m_cy->set(_CY_img_invert, 0);
 }
 
+/** set dist(side to hole) */
 void MainWindow::slot_setS2HValue(int value)
 {
     QString str;
-//    m_cy->CY_dist = value;
     m_cy->set(_CY_dist, value);
 
     str = str.number(value);
     ui->labelS2HValue->setText(str);
 }
 
+/** set space|delta(hole to hole) */
 void MainWindow::slot_setH2HValue(int value)
 {
     QString str;
-//    m_cy->CY_delta = value;
     m_cy->set(_CY_delta, value);
 
     str = str.number(value);
@@ -162,29 +233,21 @@ void MainWindow::slot_setH2HValue(int value)
 
 void MainWindow::slot_setXValue(int value)
 {
-//    qDebug()<<"X: "<<value;
-//    m_cy->CY_ROI_x = value;
     m_cy->set(_CY_ROI_x, value);
 }
 
 void MainWindow::slot_setYValue(int value)
 {
-//    qDebug()<<"Y: "<<value;
-//    m_cy->CY_ROI_y = value;
     m_cy->set(_CY_ROI_y, value);
 }
 
 void MainWindow::slot_setLValue(int value)
 {
-//    qDebug()<<"L: "<<value;
-//    m_cy->CY_ROI_L = value;
     m_cy->set(_CY_ROI_L, value);
 }
 
 void MainWindow::slot_setHValue(int value)
 {
-//    qDebug()<<"H: "<<value;
-//    m_cy->CY_ROI_H  = value;
     m_cy->set(_CY_ROI_H, value);
 }
 
@@ -198,6 +261,10 @@ void MainWindow::slot_openCam()
     }
     else
     {
+         // If 1024x768 is bigger than the Maxium size, it will be set to the Maxium size
+         m_vid->set(CV_CAP_PROP_FRAME_HEIGHT,480);
+         m_vid->set(CV_CAP_PROP_FRAME_WIDTH,640);
+
          qDebug()<<"Success to open CAM!";
          m_timer->start();
     }
@@ -215,52 +282,69 @@ void MainWindow::slot_closeCam()
     m_timer = NULL;
 }
 
+/** Choose frame sources and pre-process */
 void MainWindow::slot_updateImg()
 {
+#ifdef DEBUG_USE_VID
+	// Get a frame from video
     *m_vid >> *m_frame;
+#else
+    // Test Images Name Choose 
+	cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\test_img_";
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_1\\test_";
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_1\\narrow_";
+	//cv::String fileNamePre = "F:\\PunchSystem\\CYAlgorithm\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\test_";
+    if(IMG_INDEX>6)
+        IMG_INDEX = 1;
+    cv::String fileNameNum = cv::String(std::to_string(IMG_INDEX));
+    cv::String fileNameEnd = ".jpg";
+    cv::String fileName = fileNamePre+fileNameNum+fileNameEnd;
+
+	// Get a frame from test imamge
+    *m_frame = cv::imread(fileName);
+#endif
+
     m_frame->copyTo(*m_rawframe);
 
-    //ROI frame
-    /// ROI valid revise
+    // ROI valid check
     if(m_ROI->x>m_frame->cols)
         m_ROI->x = m_frame->cols;
     if(m_ROI->y>m_frame->rows)
         m_ROI->y = m_frame->rows;
     if(m_ROI->x + m_ROI->width > m_frame->cols)
-    {
         m_ROI->width = m_frame->cols-m_ROI->x;
-    }
     if(m_ROI->y + m_ROI->height > m_frame->rows)
-    {
         m_ROI->height = m_frame->rows-m_ROI->y;
-    }
 
-    *m_bwframe = m_cy->resize2bw(*m_frame);
-    *m_bwframe = (*m_bwframe)(*m_ROI);
-    *m_roiframe = *m_bwframe;   //m_roiframe should be Binary img
+    *m_bwframe = m_cy->rgb2bw(*m_frame);	// Convert m_frame(rgb) to m_bwframe(binary)
+    *m_bwframe = (*m_bwframe)(*m_ROI);	// Get ROI image 
+    *m_roiframe = *m_bwframe;   // m_roiframe should be Binary image
 
-    //ROI Rect
+    // Draw ROI Rectangle
     cv::rectangle(*m_frame, *m_ROI, cv::Scalar(0, 0, 255), 1);
-//    qDebug()<<m_ROI->x<<","<<m_ROI->y<<","<<m_ROI->width<<","<<m_ROI->height;
 
-    cv::cvtColor(*m_frame, *m_frame, cv::COLOR_RGB2BGR);
+	// OpenCV-Mat to Qt-QImage 
+    cv::cvtColor(*m_frame, *m_frame, cv::COLOR_RGB2BGR); //Qt use BGR rather than RGB
     QImage img(m_frame->data, m_frame->cols, m_frame->rows, int(m_frame->step), QImage::Format_RGB888);
-
-    cv::cvtColor(*m_bwframe, *m_bwframe, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(*m_bwframe, *m_bwframe, cv::COLOR_GRAY2BGR);	//Qt use BGR rather than RGB
     QImage imgbw(m_bwframe->data, m_bwframe->cols, m_bwframe->rows, int(m_bwframe->step), QImage::Format_RGB888);
 
+	// Check img|imgbw is Null or not
     if (img.isNull() || imgbw.isNull())
     {
         qDebug()<<"Image is NULL!";
     }
 
+	// Show images
     m_imgLabel->setPixmap(QPixmap::fromImage(img));
     ui->scrollArea->setWidget(m_imgLabel);
-
     m_imgbwLabel->setPixmap(QPixmap::fromImage(imgbw));
     ui->scrollAreaBw->setWidget(m_imgbwLabel);
 }
 
+/** Choose algorithm according to AlgorithmType */
 void MainWindow::slot_mainProc()
 {
     cv::Mat frame;
@@ -269,16 +353,59 @@ void MainWindow::slot_mainProc()
 
     if (TrackbarVorP_value)
     {
-        resultFrame = m_cy->chongya(frame);
+
+        cy_algorithm algo;
+        cy_performance perform;
+
+        perform.time_start();	// Time counter start
+        switch (AlgorithmType) {
+        case 0:
+            algo.chongya(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        case 1:
+            //algo.chongyaFowardCircle(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			algo.chongyaFowardCircleSmartHorizontal(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        case 2:
+            algo.chongyaFowardPoly(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        case 3:
+            algo.chongyaFowardRect(frame, m_cy->CY_r, 2*(m_cy->CY_r), m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        case 4:
+            algo.chongyaFowardCircle_w(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        case 5:
+            //algo.chongyaAllShape(frame, frame, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+            break;
+        default:
+            std::cerr<<"Algorithm Type Error!";
+            break;
+        }
+        int time_diff = perform.time_end();	// Time counter end
+
+		// Algorithm time update
+        this->updateAlgoTime(time_diff);
+
+        int len = m_cy->vout.length();
+        //std::cout<< len<<std::endl;
+
+        m_cy->voutf.clear();
+        for(int i=0; i<len; i++)
+        {
+          m_cy->voutf.append((cv::Point_<double>)m_cy->vout[i]);
+        }
+        resultFrame = frame;
+
         TrackbarVorP_value = 0;
 
-        ///Display result
+        // Display result
         cv::cvtColor(resultFrame, resultFrame, cv::COLOR_GRAY2BGR);
         QImage imgResult(resultFrame.data, resultFrame.cols, resultFrame.rows, int(resultFrame.step), QImage::Format_RGB888);
         m_imgResultLabel->setPixmap(QPixmap::fromImage(imgResult));
         ui->scrollAreaResult->setWidget(m_imgResultLabel);
 
-        /// Rad table
+        // Rad table
         ui->tableResult->clearContents();
         for(int i=0; i<m_cy->get_voutf().length(); i++)
         {
@@ -297,7 +424,7 @@ void MainWindow::slot_setROI(int value)
     strName = this->sender()->objectName();
     qDebug()<<strName;
 
-    /// Value valid check step 1
+    // Value valid check step 1
     if(value<0)
         value = 0;
 

@@ -1,3 +1,10 @@
+﻿/**
+* @file mainwindow.h
+* 界面流程程序
+* 该文件源码描述了界面涉及的触发函数，各类指针等
+* @date 2018-02-02
+*/
+
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -5,9 +12,9 @@
 #include <QCloseEvent>
 #include <QLabel>
 #include <QImage>
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 #include <QTimer>
-#include <chongya.h>
+#include "cy_preproc.h"
 
 namespace Ui {
 class MainWindow;
@@ -16,7 +23,6 @@ class MainWindow;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
-
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
@@ -40,26 +46,31 @@ public slots:
     void slot_updateImg();
     void slot_mainProc();
     void slot_setROI(int value);
+    void slot_setFrameRate(int value);
+    void slot_setHoughValue(int value);
+    void updateAlgoTime(int value);
+    void slot_setAlgoType(int value);
 
 protected:
     void closeEvent(QCloseEvent *event);
 
 private:
     Ui::MainWindow *ui;
-    QLabel *m_imgLabel;
-    QLabel *m_imgbwLabel;
-    QLabel *m_imgResultLabel;
-    cv::VideoCapture *m_vid;
-    cv::Mat *m_frame;
-    cv::Mat *m_rawframe;
-    cv::Mat *m_bwframe;
-    cv::Mat *m_roiframe;
-    QTimer *m_timer;
-    cv::Rect *m_ROI;
-    cy *m_cy;
+    QLabel *m_imgLabel;	//<原始图像窗口
+    QLabel *m_imgbwLabel;	//<二值化图像窗口
+    QLabel *m_imgResultLabel;//<结果图像窗口
+    cv::VideoCapture *m_vid;	//<视频指针
+    cv::Mat *m_frame;	//<原始图像指针(过渡态)
+    cv::Mat *m_rawframe;	//<原始图像指针
+    cv::Mat *m_bwframe;	//<二值化图像指针(过渡态)
+    cv::Mat *m_roiframe;	//<ROI区域图像指针
+    QTimer *m_timer;	//<定时器指针
+    cv::Rect *m_ROI;	//<ROI矩形指针
+    cy_preproc *m_cy;	//<冲压预处理类指针，保存冲压变量和预处理
 
-    int TrackbarVorP_value;
-    int TrackbarRorE_value;
+    int AlgorithmType;	//<算法类型
+    int TrackbarVorP_value;	//<状态标签，空闲|处理
+    int TrackbarRorE_value;	//<状态标签，运行|退出
 };
 
 #endif // MAINWINDOW_H

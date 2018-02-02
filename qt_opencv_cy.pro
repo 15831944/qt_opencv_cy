@@ -26,20 +26,29 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += main.cpp\
         mainwindow.cpp \
     cyproc.cpp \
-    chongya.cpp
+    chongya.cpp \
+    cy_algorithm.cpp \
+    cy_performance.cpp
 
 HEADERS  += mainwindow.h \
     cyproc.h \
     globalParam.h \
-    chongya.h
+    chongya.h \
+    cy_algorithm.h \
+    cy_performance.h
 
 FORMS    += mainwindow.ui
 
 
-INCLUDEPATH+=D:\opencv\opencv\build\include
-INCLUDEPATH+=D:\opencv\opencv\build\include\opencv
-INCLUDEPATH+=D:\opencv\opencv\build\include\opencv2
+#INCLUDEPATH+=D:\opencv\opencv\build\include
+#INCLUDEPATH+=D:\opencv\opencv\build\include\opencv
+#INCLUDEPATH+=D:\opencv\opencv\build\include\opencv2
 
-LIBS+=D:\opencv\opencv\build\x64\vc14\lib\opencv_world310d.lib
-LIBS+=D:\opencv\opencv\build\x64\vc14\lib\opencv_world310.lib
+#LIBS+=D:\opencv\opencv\build\x64\vc14\lib\opencv_world310d.lib
+#LIBS+=D:\opencv\opencv\build\x64\vc14\lib\opencv_world310.lib
+INCLUDEPATH +=  C:\opencv\build\include \
+                C:\opencv\build\include\opencv \
+                C:\opencv\build\include\opencv2
+
+LIBS += C:\opencv\build\x64\vc14\lib\opencv_world320d.lib
 
