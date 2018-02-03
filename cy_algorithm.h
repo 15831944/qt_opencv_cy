@@ -31,7 +31,8 @@ public:
     cv::Mat polySub(cv::Mat& imgbw, int r);
     cv::Mat rectSub(cv::Mat& imgbw, int xr, int yr);
 
-    cv::Mat plotc(cv::Mat& img, cv::Point rad, int r);
+
+	cv::Mat plotc(cv::Mat& img, cv::Point rad, int r);
     cv::Mat plotr(cv::Mat& img, cv::Point rad, int xr, int yr);
     cv::Mat plotp(cv::Mat& img, cv::Point rad, int r);
 
@@ -46,14 +47,14 @@ public:
     QVector<cv::Point> pointPixForwardSort(QVector<cv::Point> &vin);
     QVector<cv::Point> pointPixSortHlimit(QVector<cv::Point> &vin, int imgHeight, int radius);
 
-    int chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形随边智能横排
-    int chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//六边形随边智能横排
+	int chongyaFowardCircleSmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22	);//圆形随边智能横排
+	int chongyaFowardPolySmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22);//六边形随边智能横排
 
-    int chongya(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);   //圆形智能排
+    int chongya(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形智能排
     int chongyaFowardCircle(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形普通三角形排法-修改顶部扫描方式
-    int chongyaFowardPoly(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//六边形普通三角形排法-强行后退0.5r方式（未修改为顶部扫描方式）
-    int chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int dist, int space, QVector<cv::Point> &vec, int overLap);//矩形排法
-    int chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形竖型排法--未修改为随边
+    int chongyaFowardPoly(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);	//六边形普通三角形排法-强行后退0.5r方式（未修改为顶部扫描方式）
+	int chongyaFowardRect(cv::Mat & img, int xradius, int yradius, int dist, int space, QVector<cv::Point>& vec, int overLap, double new_tablet_scanRange_factor = 0.3);//矩形排法
+	int chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor = 0.3, double scanRange_factor = 0.22);//智能竖排
 
 	cv::Mat tmp_img;
 signals:

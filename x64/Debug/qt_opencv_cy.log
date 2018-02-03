@@ -1,16 +1,34 @@
-﻿  cy_algorithm.cpp
+﻿  Moc'ing cy_algorithm.h...
+  moc_cy_algorithm.cpp
 D:\opencv\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
-cy_algorithm.cpp(808): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(903): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(1195): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(1595): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(2240): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(2028): warning C4189: “firstFrameLine”: 局部变量已初始化但不引用
-cy_algorithm.cpp(2573): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(2598): warning C4018: “<”: 有符号/无符号不匹配
-cy_algorithm.cpp(2715): warning C4018: “<”: 有符号/无符号不匹配
+  cy_algorithm.cpp
+D:\opencv\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+cy_algorithm.cpp(818): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(913): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(1214): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(1614): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2270): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2048): warning C4189: “firstFrameLine”: 局部变量已初始化但不引用
+cy_algorithm.cpp(2619): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2644): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2761): warning C4018: “<”: 有符号/无符号不匹配
+  mainwindow.cpp
+D:\opencv\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
+f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(18): warning C4005: “IMGBW_BLACK”: 宏重定义
+  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(14): note: 参见“IMGBW_BLACK”的前一个定义
+f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(19): warning C4005: “IMGBW_WITHE”: 宏重定义
+  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(15): note: 参见“IMGBW_WITHE”的前一个定义
+f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(20): warning C4005: “IMGBW_THRESH_B2W”: 宏重定义
+  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(16): note: 参见“IMGBW_THRESH_B2W”的前一个定义
+  正在生成代码...
   qt_opencv_cy.vcxproj -> F:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\debug\qt_opencv_cy.exe
   qt_opencv_cy.vcxproj -> debug\qt_opencv_cy.pdb (Full PDB)

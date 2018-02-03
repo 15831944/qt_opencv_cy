@@ -581,18 +581,28 @@ int cy_algorithm::chongya(cv::Mat& img, int radius, int dist, int space, QVector
 * @param space 冲孔间距
 * @param vec 点序列
 * @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param double scanRange_factor [=0.22]料片非头部扫描范围参数
 * @return:
 *		<0: 函数运行错误
 *		other:	冲孔个数
 * @note 修改记录
 *		build180126:修改圆形智能横排排孔BUG，防止非拼接区域一排孔只排几个
 */
-int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
 {
     Mat img_raw, imgEdge;
     unsigned int rows, cols;
     int numOfPoints;
     Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+
+	//料片扫描范围参数约束
+	const double scanRange_factor_MIN = 0.1;
+	const double scanRange_factor_MAX = 0.3;
+	if (scanRange_factor > scanRange_factor_MAX)
+		scanRange_factor = scanRange_factor_MAX;
+	else if (scanRange_factor < scanRange_factor_MIN)
+		scanRange_factor = scanRange_factor_MIN;
+
 
     /// 图像有效性检测
     if (img.empty())
@@ -795,7 +805,7 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
 
             //在ScanRange内扫描，得到最大行冲压单元
             ////////////////////////////////////////////////
-            int ScanRange = (int)(0.3f*(radius+space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
+            int ScanRange = (int)(scanRange_factor*(radius+space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
             ///////////////////////////////////////////////////
 
             //{
@@ -1000,18 +1010,27 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
 * @param space 冲孔间距
 * @param vec 点序列
 * @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param double scanRange_factor [=0.22]料片非头部扫描范围参数
 * @return:
 *		<0: 函数运行错误
 *		other:	冲孔个数
 */
-int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
 
-										   /// 图像有效性检测
+	//料片扫描范围参数约束
+	const double scanRange_factor_MIN = 0.1;
+	const double scanRange_factor_MAX = 0.3;
+	if (scanRange_factor > scanRange_factor_MAX)
+		scanRange_factor = scanRange_factor_MAX;
+	else if (scanRange_factor < scanRange_factor_MIN)
+		scanRange_factor = scanRange_factor_MIN;
+
+	/// 图像有效性检测
 	if (img.empty())
 	{
 		return -1;
@@ -1182,7 +1201,7 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 
 			//在ScanRange内扫描，得到最大行冲压单元
 			////////////////////////////////////////////////
-			int ScanRange = (int)(0.3f*(radius + space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
+			int ScanRange = (int)(scanRange_factor*(radius + space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
 																 ///////////////////////////////////////////////////
 
 																 //{
@@ -2014,19 +2033,29 @@ int cy_algorithm::chongyaFowardPoly(cv::Mat& img, int radius, int dist, int spac
 * @param space 冲孔间距
 * @param vec 点序列
 * @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param new_tablet_scanRange_factor [=0.3]料片头部扫描范围参数
 * @return:
 *		<0: 函数运行错误
 *		other:	冲孔个数
 * @note 修改记录
 * build180127:采用顶部扫描方式来处理新料片第一帧
 */
-int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor)
 {
     Mat img_raw, imgEdge;
     unsigned int rows, cols;
     int numOfPoints;
     bool firstFrameLine = true;
     Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+
+	//料片头部扫描范围参数约束
+	const double new_tablet_scanRange_factor_MIN = 0.1;
+	const double new_tablet_scanRange_factor_MAX = 1.0;
+	if (new_tablet_scanRange_factor > new_tablet_scanRange_factor_MAX)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MAX;
+	else if (new_tablet_scanRange_factor < new_tablet_scanRange_factor_MIN)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MIN;
+
 
     /// 图像有效性检测
     if (img.empty())
@@ -2231,8 +2260,9 @@ int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int 
                 if (new_tablet_flag)
                 {
                     //扫描得到后退行
+					
                     //////////////////////////////////////////////////
-                    int ScanRange = (int)(0.5f*(yradius + space*0.5f));
+                    int ScanRange = (int)(new_tablet_scanRange_factor*(yradius + space*0.5f));
                     //////////////////////////////////////////////////
                     int max_points = linePoints;
                     int max_points_line = i;
@@ -2350,22 +2380,38 @@ int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int 
 * @param space 冲孔间距
 * @param vec 点序列
 * @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param new_tablet_scanRange_factor [=0.3]料片头部扫描范围参数
+* @param double scanRange_factor [=0.22]料片非头部扫描范围参数
 * @return:
 *		<0: 函数运行错误
 *		other:	冲孔个数
 * @note 修改记录
 * build180123：修改竖排排孔BUG
 */
-int cy_algorithm::chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor, double scanRange_factor)
 {
     Mat img_raw, imgEdge;
     unsigned int rows, cols;
     int numOfPoints;
     Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
 
-    const unsigned int BackScanRange = 0;           //
-    const double new_tablet_scanRange_factor = 0.3; //料片头部扫描范围参数
-    const double scanRange_factor = 0.22;           //料片非头部扫描范围参数
+	const unsigned int BackScanRange = 0;	//扫描范围后退像素量       
+
+	//料片头部扫描范围参数约束
+	const double new_tablet_scanRange_factor_MIN = 0.1;
+	const double new_tablet_scanRange_factor_MAX = 1.0;
+	if (new_tablet_scanRange_factor > new_tablet_scanRange_factor_MAX)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MAX;
+	else if (new_tablet_scanRange_factor < new_tablet_scanRange_factor_MIN)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MIN;
+
+	//料片非头部扫描范围参数约束
+	const double scanRange_factor_MIN = 0.1;
+	const double scanRange_factor_MAX = 0.3;
+	if (scanRange_factor > scanRange_factor_MAX)
+		scanRange_factor = scanRange_factor_MAX;
+	else if (scanRange_factor < scanRange_factor_MIN)
+		scanRange_factor = scanRange_factor_MIN;
 
     /// 图像有效性检测
     if (img.empty())
