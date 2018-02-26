@@ -10,7 +10,7 @@
 using namespace std;
 using namespace cv;
 
-/*
+/**
  *  @brief : 构造函数，执行初始化参数
 */
 cy_preproc::cy_preproc()
@@ -19,7 +19,7 @@ cy_preproc::cy_preproc()
     std::cout<<"TEST : cy_preproc "<<std::endl;
 }
 
-/*
+/**
  * @brief: 变量初始化
 */
 void cy_preproc::cyVarInit()
@@ -39,7 +39,7 @@ void cy_preproc::cyVarInit()
     CY_img_invert = 0;		//<反色选择
 }
 
-/*
+/**
 *	@brief : RGB图像转二值化图像
 *	@param imgin : 原图像引用
 */
@@ -53,5 +53,4 @@ cv::Mat cy_preproc::rgb2bw(cv::Mat& imgin)
 		imgout = ~imgout;
 	return imgout;
 }
-
 

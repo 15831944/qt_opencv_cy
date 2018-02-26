@@ -51,10 +51,10 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->spinBoxButton, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
     connect(ui->spinBoxLeft, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
     connect(ui->spinBoxRight, SIGNAL(valueChanged(int)), this, SLOT(slot_setROI(int)));
-    ui->spinBoxTop->setValue(271);
-    ui->spinBoxLeft->setValue(77);
-    ui->spinBoxButton->setValue(301);
-    ui->spinBoxRight->setValue(843);
+    ui->spinBoxTop->setValue(0);
+    ui->spinBoxLeft->setValue(0);
+    ui->spinBoxButton->setValue(800);
+    ui->spinBoxRight->setValue(500);
 
     //Timer init
     m_timer->setInterval(30);	//<frame interval:30ms
@@ -82,7 +82,11 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->comboBoxAlgoChoose->addItem(tr("H-CY(Poly)-2"), 2);
     ui->comboBoxAlgoChoose->addItem(tr("H-CY(Rect)-3"), 3);
     ui->comboBoxAlgoChoose->addItem(tr("H-W-CY(Circle)-4"), 4);
-    ui->comboBoxAlgoChoose->addItem(tr("I-W-CY(AllShape)-5"), 5);
+    ui->comboBoxAlgoChoose->addItem(tr("I-W-CY(Abnormity)-5"), 5);
+	ui->comboBoxAlgoChoose->addItem(tr("H-CY(A_Positive)-6"), 6);
+	ui->comboBoxAlgoChoose->addItem(tr("H-CY(A_Negtive)-7"), 7);
+	ui->comboBoxAlgoChoose->addItem(tr("--Reserved-8"), 8);
+	ui->comboBoxAlgoChoose->addItem(tr("--Reserved-9"), 9);
     AlgorithmType = 1;	//<default algorithm type
     ui->comboBoxAlgoChoose->setCurrentIndex(AlgorithmType);
 
@@ -151,7 +155,7 @@ void MainWindow::slot_Proc()
 {
     TrackbarVorP_value = 1;
 	//qDebug()<<"TrackbarVorP_value: "<<TrackbarVorP_value;
-    IMG_INDEX++;
+    //IMG_INDEX++;
 }
 
 void MainWindow::slot_setThreshValue(int value)
@@ -290,7 +294,23 @@ void MainWindow::slot_updateImg()
     *m_vid >> *m_frame;
 #else
     // Test Images Name Choose 
-	cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+	cv::String fileNamePre;
+	switch (AlgorithmType)
+	{
+	case 6: { //positive
+		fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+		break;
+	}
+	case 7: { //negtive
+		fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\Pos_images\\Positive_test_";
+		break;
+	}
+	default: //normal
+		fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+		break;
+	}
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\Pos_images\\Positive_test_";
+	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
 	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
 	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\test_img_";
 	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_1\\test_";
@@ -301,7 +321,6 @@ void MainWindow::slot_updateImg()
     cv::String fileNameNum = cv::String(std::to_string(IMG_INDEX));
     cv::String fileNameEnd = ".jpg";
     cv::String fileName = fileNamePre+fileNameNum+fileNameEnd;
-
 	// Get a frame from test imamge
     *m_frame = cv::imread(fileName);
 #endif
@@ -358,6 +377,8 @@ void MainWindow::slot_mainProc()
         cy_performance perform;
 
         perform.time_start();	// Time counter start
+		cv::String stereotype_normal_filename = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_2\\test_5.jpg";
+		cv::String stereotype_pos_neg_filename = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_2\\test_8.jpg";
         switch (AlgorithmType) {
         case 0:
             algo.chongya(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
@@ -375,9 +396,33 @@ void MainWindow::slot_mainProc()
         case 4:
             algo.chongyaFowardCircle_w(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
             break;
-        case 5:
-            //algo.chongyaAllShape(frame, frame, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
-            break;
+		case 5: {
+			cv::Mat img_with_stereotype = cv::imread(stereotype_normal_filename);
+			//获得样板
+			cv::Mat stereotype = algo.getStereotype(img_with_stereotype);
+			//设置样板
+			algo.setStereotype(stereotype);
+			//异形冲压（只有设置过样板异形冲压才会进行，否则返回错误）
+			algo.chongyaFowardAbnormitySmartHorizontal(frame, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			break; }
+		case 6: {
+			cv::Mat img_with_stereotype = cv::imread(stereotype_pos_neg_filename);
+			//获得样板
+			cv::Mat stereotype = algo.getStereotype(img_with_stereotype);
+			//设置样板
+			algo.setStereotype(stereotype);
+			//异形正面排孔冲压（只有设置过样板异形冲压才会进行，否则返回错误）
+			algo.chongyaFowardAbnormityPositive(frame, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			break; }
+		case 7: {
+			cv::Mat img_with_stereotype = cv::imread(stereotype_pos_neg_filename);
+			//获得样板
+			cv::Mat stereotype = algo.getStereotype(img_with_stereotype);
+			//设置样板
+			algo.setStereotype(stereotype);
+			//异形反面排孔冲压（只有设置过样板异形冲压才会进行，否则返回错误）
+			algo.chongyaFowardAbnormityNegtive(frame, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			break; }
         default:
             std::cerr<<"Algorithm Type Error!";
             break;
@@ -411,6 +456,8 @@ void MainWindow::slot_mainProc()
         {
             setTable(i, m_cy->get_voutf()[i].x, m_cy->get_voutf()[i].y);
         }
+		// Image index increase
+		IMG_INDEX++;
     }
     if (TrackbarRorE_value)
     {
@@ -462,3 +509,4 @@ void MainWindow::setTable(int id, double x, double y)
     col = 1;
     ui->tableResult->setItem(row, col, itemy);
 }
+

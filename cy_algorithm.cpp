@@ -13,9 +13,24 @@ typedef struct MRCYU_TAG
 	int lineInd;	//<冲孔最大数所在行
 } MRCYU;
 
+/**
+* @struct ACYCU_TAG
+* @brief 异形孔冲压控制单元(Abnormity-Chongya Control Unit)
+* 保存异形孔样板相关信息
+*/
+typedef struct ACYCU_TAG
+{
+	bool init; //<样板被初始化
+	bool st_changed_notProc; //<样板发生改变但是没有被处理
+	Mat stereotype; //<二值化样板
+	Mat stereotype_x_flip;
+} ACYCU;
+ACYCU abnormity;
+
 cy_algorithm::cy_algorithm(QObject *parent) : QObject(parent)
 {
-
+	abnormity.init = false;
+	abnormity.st_changed_notProc = false;
 }
 
 cy_algorithm::~cy_algorithm()
@@ -2851,6 +2866,1985 @@ int cy_algorithm::chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int 
 
     return numOfPoints;
 }
+
+////////////异形冲压函数//////////////
+/**
+* @brief: 异形孔智能横排
+* @param img OpenCV二值化图像
+* @param shape 孔型样图(黑色为样板，白色为背景)
+* @param dist 随边间距
+* @param space 冲孔间距
+* @param vec 点序列
+* @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @return 
+*		<0: 函数运行错误
+*		other:	冲孔个数
+*/
+int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+{
+	Mat img_raw, imgEdge;
+	unsigned int rows, cols;
+	int numOfPoints;
+	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+	const double scanFactor = 0.1; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	static double jumpFactor = 1.2; //跳行因子
+	const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
+	const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
+	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+
+	// 图像有效性检测
+	if (img.empty())
+	{
+		return -1;
+	}
+	img.copyTo(img_raw);
+
+	// 样板初始化检测
+	if (!abnormity.init)
+	{
+		return -1;
+	}
+
+	////////////样板处理////////////
+	//触发信号
+	static bool trigger_stereotype_changed;
+	static bool trigger_dist_changed;
+	static bool trigger_space_changed;
+	//三种基本样板(origin, with dist, with space)
+	static Mat stereotype_origin;
+	static Mat stereotype_with_dist;
+	static Mat stereotype_with_space;
+	//减中心样板（with space），用stereotype_with_space_flip沿stereotype_with_space边缘滑动形成的
+	static Mat stereotype_WS_center_sub;
+	//原始样板边缘
+	static Mat stereotype_origin_edge;
+	// 样板中心
+	static Point stereotype_origin_center;
+	static Point stereotype_ODS_expand_center;	//ODS:origin,dist,space
+	static Point stereotype_WS_center_sub_center;
+	//三种镜像样板(origin, with dist, with space)
+	static Mat stereotype_origin_flip;
+	static Mat stereotype_with_dist_flip;
+	static Mat stereotype_with_space_flip;
+	//样板基本信息(左右最大距离，上下最大距离)
+	static int stereotype_origin_x_length;
+	static int stereotype_origin_y_length;
+	static int stereotype_with_dist_x_length;
+	static int stereotype_with_dist_y_length;
+	static int stereotype_with_space_x_length;
+	static int stereotype_with_space_y_length;
+
+	// 样板改变测试
+	if(abnormity.st_changed_notProc)
+	{
+		abnormity.st_changed_notProc = false;
+
+		//测试用例
+		Mat img_shape;
+		img_shape = abnormity.stereotype;
+		img_shape = ~img_shape;
+		img_shape.copyTo(stereotype_origin);
+		trigger_stereotype_changed = true;
+	}
+	// dist改变测试
+	static int previous_dist = dist;
+	if (!(previous_dist == dist))
+	{
+		trigger_dist_changed = true;
+		previous_dist = dist;	//更新previous_dist变量
+	}
+
+	// space改变测试
+	static int previous_space = space;
+	if (!(previous_space == space))
+	{
+		trigger_space_changed = true;
+		previous_space = space;
+	}
+
+	if (trigger_stereotype_changed || trigger_dist_changed || trigger_space_changed)
+	{
+		// 复位触发信号
+		trigger_stereotype_changed = false;
+		trigger_dist_changed = false;
+		trigger_space_changed = false;
+
+		//----- 原始样板处理 -----//
+		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
+		{
+			return -1;
+		}
+		//原始样板中心
+		stereotype_origin_edge = edgesbw(stereotype_origin);
+		stereotype_origin_center = Point(stereotype_origin.cols, stereotype_origin.rows) / 2;
+		//样板镜像
+		flip(stereotype_origin, stereotype_origin_flip, -1);
+
+		//----- 样板扩展 -----//
+		//拓宽原始样板边缘以防超出边界
+		Mat stereotype_origin_border_expand;
+		int expand_size = max(dist, space);
+		copyMakeBorder(stereotype_origin, stereotype_origin_border_expand, expand_size, expand_size, expand_size, expand_size, BORDER_CONSTANT, IMGBW_BLACK);
+		//扩展样板中心
+		stereotype_ODS_expand_center = Point(stereotype_origin_border_expand.cols, stereotype_origin_border_expand.rows) / 2;
+		//扩展边界(border expand)样板边缘获取
+		Mat stereotype_origin_BE_edge = edgesbw(stereotype_origin_border_expand);
+
+		//----- 边距样板处理 -----//
+		//样板扩增随边距离
+		stereotype_with_dist = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, dist);
+		//扩增随边距离样板镜像
+		flip(stereotype_with_dist, stereotype_with_dist_flip, -1);
+		//扩增随边距离样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
+		{
+			return -1;
+		}
+
+		//----- 孔间隙样板处理 -----//
+		//样板扩增孔间隙
+		stereotype_with_space = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, space);
+		//扩增孔间隙样板镜像
+		flip(stereotype_with_space, stereotype_with_space_flip, -1);
+		//扩增孔间隙样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
+		{
+			return -1;
+		}
+
+		//----- 减中心样板处理(with space) -----//
+		//扩增孔间隙样板边界扩展
+		Mat stereotype_with_space_expended;
+		int vertical_ex_size = stereotype_with_space.rows / 2;
+		int horizon_ex_size = stereotype_with_space.cols / 2;
+		copyMakeBorder(stereotype_with_space, stereotype_with_space_expended, vertical_ex_size, vertical_ex_size, horizon_ex_size, horizon_ex_size, BORDER_CONSTANT, IMGBW_BLACK);
+		Mat stereotype_with_space_expended_edge = edgesbw(stereotype_with_space_expended);
+		//获取减中心样板
+		stereotype_WS_center_sub = stereotype_with_space_expended | stereotypeSub(stereotype_with_space_expended_edge, stereotype_with_space_flip, stereotype_ODS_expand_center);
+		//减中心样板中心
+		stereotype_WS_center_sub_center = Point(stereotype_WS_center_sub.cols, stereotype_WS_center_sub.rows) / 2;
+
+		//----- 获取跳行因子-----//
+		jumpFactor = getJumpfactor(stereotype_WS_center_sub, stereotype_WS_center_sub_center, stereotype_with_space_x_length, stereotype_with_space_y_length);
+		if (superNarrow)
+		{
+			jumpFactor = 0.01;
+		}
+
+		////Debug
+		//cv::circle(stereotype_WS_center_sub, stereotype_WS_center_sub_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_WS_center_sub", stereotype_WS_center_sub);
+
+		//cv::circle(stereotype_with_dist, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_dist", stereotype_with_dist);
+
+		//cv::circle(stereotype_with_space, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_space", stereotype_with_space);
+		////Debug end
+	}
+	/////////////////////////////////////////////////////////////////////////////////
+	// 增加额外x,y方向间距
+	stereotype_with_space_x_length *= x_extra_space_factor;
+	stereotype_with_space_y_length *= y_extra_space_factor;
+
+	/// Image concat
+	static Mat img_remain, last_frameRaw, img_rawRaw;
+	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
+	int img_remain_h_limit = (int)(img_raw.rows);
+	if (img_remain_h > img_remain_h_limit)
+		return -1;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (overLap>img_remain_h)
+		img_remain_h = overLap;
+	if (img_remain.empty())  //第一帧用空白填充连接部分
+	{
+		img_raw.copyTo(img_remain);
+		img_raw.copyTo(last_frameRaw);
+		img_remain = IMGBW_WITHE;
+		last_frameRaw = IMGBW_WITHE;
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			if (img_cpartRem.cols == img_cpartNow.cols)
+			{
+				vconcat(img_cpartRem, img_cpartNow, img_raw);
+				vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+			}
+			else
+			{
+				img_cpartNow.copyTo(img_raw);
+				img_cpartNowRaw.copyTo(img_rawRaw);
+			}
+		}
+	}
+	else
+	{
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			img_cpartNow.copyTo(img_raw);
+			img_cpartNowRaw.copyTo(img_rawRaw);
+		}
+	}
+	img_raw.copyTo(img_remain);
+	img_raw.copyTo(last_frameRaw);
+
+	// Debug
+	///结果显示 1
+	Mat img_remain_Debug;
+	img_remain.copyTo(img_remain_Debug);
+	//imshow("img_remain", img_remain);
+	// Debug End
+
+	/// 显示图像信息
+	rows = img_raw.rows;
+	cols = img_raw.cols;
+
+	/// 随边处理
+	Mat img_rawRawEdge = edgesbw(img_rawRaw);
+	img_rawRawEdge.col(0) = IMGBW_WITHE;
+	img_rawRawEdge.col(cols - 1) = IMGBW_WITHE;
+	img_rawRaw = img_rawRaw | circleSub(img_rawRawEdge, dist);
+
+	/// 随边与冲孔图像整合
+	img_raw = img_raw | img_rawRaw;
+
+	/// 得到整合图像边缘
+	imgEdge = edgesbw(img_raw);
+
+	/// 加边框边界，若不需要，移除以下四条语句
+	imgEdge.row(0) = IMGBW_WITHE;
+	imgEdge.row(rows - 1) = IMGBW_WITHE;
+	imgEdge.col(0) = IMGBW_WITHE;
+	imgEdge.col(cols - 1) = IMGBW_WITHE;
+
+	/// 得到首个圆心区域
+	//img_raw = img_raw | circleSub(imgEdge, radius);
+	img_raw = img_raw | stereotypeSub(imgEdge, stereotype_origin_flip, stereotype_origin_center);
+
+
+	// Debug
+	// imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 主处理循环，获得像素坐标点集合
+	Point rad;
+	vec.clear();
+	int num = 0;
+	int rowStart;
+
+	///减去上一帧最后两行得到顶部圆心区域
+	static QVector<cv::Point> lastFramelastRVec;
+	Point lastFramePoint = Point(cols, rows);
+	if (lastFramelastRVec.length()>0)
+	{
+		lastFramePoint = lastFramelastRVec.last();
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = img_remain_h - lastFramelastRVec[k].y;
+
+			//防止stereotype_WS_center_sub与img_raw无交集导致的plota()中roi高度为负值的异常
+			if (stereotype_WS_center_sub.rows + lastFramelastRVec[k].y - stereotype_WS_center_sub_center.y > 0)
+			{
+				//plotc(img_raw, lastFramelastRVec[k], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, lastFramelastRVec[k], stereotype_WS_center_sub_center);
+			}
+		}
+	}
+	// Debug
+	//imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 连接图像扫描首行值
+	//rowStart = img_remain_h - lastFramePoint.y + (radius + space*0.5f)*1.732f + 1;
+	rowStart = img_remain_h - lastFramePoint.y + (int)(stereotype_with_space_y_length*jumpFactor) + 1;
+
+	//{
+	/// 补足前一帧最后一行冲孔
+	int lastFrameLastrow = img_remain_h - lastFramePoint.y + 2;
+	if (lastFrameLastrow > 0)
+	{
+		for (int j = 0; j<(int)cols;) //Col scan
+		{
+			if (img_raw.at<uchar>(lastFrameLastrow, j) == IMGBW_BLACK)
+			{
+				rad.x = j;
+				rad.y = lastFrameLastrow + 1;
+				vec.append(rad);
+				/// 拼接图冲孔
+				//plotc(img_remain, rad, radius);
+				plota(img_remain, stereotype_origin, rad, stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, rad, 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, rad, stereotype_ODS_expand_center);
+
+				//j += 2 * radius + space;
+				j += stereotype_with_space_x_length;
+			}
+			else
+				j += 1;
+		}
+	}
+
+	if (rowStart < 0)
+	{
+		rowStart = 0;
+	}
+
+	/// 冲压处理
+	MRCYU mrpoints;
+	mrpoints.vec.clear();
+
+	//{
+	QVector<cv::Point> pointsVecBuf;
+	pointsVecBuf.clear();
+
+	for (int i = rowStart; i < (int)rows;)   // Row scan
+	{
+		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		if (rad.x<0 || rad.y<0)
+		{
+			i++;
+		}
+		else
+		{
+			bool existValidPoint = false;
+			int linePoints = 0;
+
+			//在ScanRange内扫描，得到最大行冲压单元
+			////////////////////////////////////////////////
+			//int ScanRange = (int)(0.3f*(radius + space*0.5f)); 
+			int ScanRange = (int)(scanFactor*(stereotype_with_space_y_length *(1/ y_extra_space_factor)));
+			///////////////////////////////////////////////////
+
+			pointsVecBuf = mrpoints.vec;
+			mrpoints.vec.clear();
+			mrpoints.maxNum = mrpoints.vec.length();
+			mrpoints.lineInd = i;
+
+			for (int r_index = i; (r_index<rows) && (r_index<i + ScanRange); r_index++)// Scan Range
+			{
+				QVector<cv::Point> tmpvec;
+				tmpvec.clear();
+
+				for (int j = 0; j<(int)cols;) //Col scan
+				{
+					if (img_raw.at<uchar>(r_index, j) == IMGBW_BLACK)
+					{
+						existValidPoint = true;
+						/// 像素坐标数组
+						rad.x = j;
+						rad.y = r_index;
+						tmpvec.append(rad);
+						//j += 2 * radius + space;
+						j += stereotype_with_space_x_length;
+
+					}
+					else
+					{
+						j += 1;
+					}
+				}
+
+				//更新最大行冲压单元
+				if (tmpvec.length()>mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = r_index;
+					mrpoints.vec = tmpvec;
+				}
+				/// If the points number is bigger than CY_maxStep then stop
+				if (num + mrpoints.maxNum >= CY_MAXSTEP) break;
+			}
+
+			///以行最后一个点为起点反冲一次，避免大间距
+			if (mrpoints.maxNum>0)
+			{
+				Point lineLastPoint = mrpoints.vec.last();
+				Point resort_rad;
+				QVector<cv::Point> tmpvec;
+				for (int j = lineLastPoint.x; j>0; j -= stereotype_with_space_x_length/*2 * radius + space*/) //Col scan
+				{
+					if (img_raw.at<uchar>(lineLastPoint.y, j) == IMGBW_BLACK)
+					{
+						/// 像素坐标数组
+						resort_rad.x = j;
+						resort_rad.y = lineLastPoint.y;
+						tmpvec.append(resort_rad);
+					}
+				}
+				//如果反冲数量不减少，则最大行冲压单元更新为反冲结果，以此避免大间距
+				//if(tmpvec.length()>=mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = lineLastPoint.y;
+					mrpoints.vec = tmpvec;
+				}
+			}
+			///更新特征量
+			linePoints = mrpoints.maxNum;
+			num += linePoints;
+			i = mrpoints.lineInd;
+			vec += mrpoints.vec;
+
+			///拼接图冲孔和当前行去圆形区域
+			for (int j = 0; j<mrpoints.maxNum; j++)
+			{
+				/// 拼接图冲孔
+				//plotc(img_remain, mrpoints.vec[j], radius);
+				plota(img_remain, stereotype_origin, mrpoints.vec[j], stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, mrpoints.vec[j], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, mrpoints.vec[j], stereotype_WS_center_sub_center);
+
+				////Debug
+				//imshow("img_remain", img_remain);
+				//imshow("img_raw", img_raw);
+				////End Debug
+			}
+
+			/// 更新下一行
+			if (existValidPoint)
+			{
+				//i += (radius + space*0.5f)*1.732f;   //sqr(3)=1.732f
+				i += (int)(stereotype_with_space_y_length*jumpFactor);
+			}
+			else
+			{
+				i += 1;
+			}
+
+			/// Debug 若最后一行的冲孔可以在下一帧拼接后完成，中断当前帧处理
+			//if (rows - i + radius + (int)(space / 2) < img_remain_h)
+			//	break;
+			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h)
+				break;
+
+		}
+	}
+
+
+	///得到点集有效个数
+	numOfPoints = vec.size();
+
+	///更新一帧最后一行冲孔
+	if (numOfPoints>0)
+	{
+		//{
+		lastFramelastRVec = pointsVecBuf + mrpoints.vec;
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = rows - lastFramelastRVec[k].y;
+		}
+	}
+	else
+		lastFramelastRVec.clear();
+
+	///冲压顺序排序（像素点）
+	vec = pointPixForwardSort(vec);
+
+	/// 图像拼接与最后一行冲点坐标修正
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		vec[j].y -= img_remain_h;   //remain concat modify
+		vec[j].y += overLap;    // overlap modify
+	}
+
+	// Debug
+	///结果显示 1
+	img = img_remain_Debug;
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		/// 坐标映射与输出
+		std::cout << vec[j] << std::endl;
+		/// 冲压结果画圆
+		Point tmp_Point(vec[j]);
+		tmp_Point.y -= overLap;
+		tmp_Point.y += img_remain_h;
+		//cv::circle(img, tmp_Point, radius, cv::Scalar(255, 255, 255), 1);
+		plota(img, stereotype_origin_edge, tmp_Point, stereotype_origin_center);
+		/// 顺序显示
+		//cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(radius / 5.0, -radius / 5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+		cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(stereotype_origin_center.x / 5.0, -stereotype_origin_center.y / 5.0), CV_FONT_HERSHEY_COMPLEX, stereotype_origin_center.x*1.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+
+	}
+	// Debug end
+
+	return numOfPoints;
+}
+
+/**
+* @brief 样板信息获取
+* @param shape 二值化的样板图像
+* @param x_dist x方向临触距离
+* @param y_dist y方向临触距离
+* @return 
+*		false: 信息获取失败
+*		true: 信息获取成功
+*/
+bool cy_algorithm::stereotypeInfoGet(const cv::Mat& shape, int& x_dist, int& y_dist)
+{
+	// 有效性检测
+	if (shape.empty())
+		return false;
+
+	Mat checkArea;
+	//行距(y方向距离)
+	y_dist = shape.rows;
+	for (int i = 1; i < shape.rows; i++)
+	{
+		Rect checkAreaT = Rect(0, i, shape.cols, shape.rows - i);
+		Rect checkAreaD = Rect(0, 0, shape.cols, shape.rows - i);
+		checkArea = shape(checkAreaT) & shape(checkAreaD);
+
+		// 检查检测区域是否存在样板重叠
+		Point rad;
+		bool result = false;
+		for (int k = 0; k < checkArea.rows; k++)
+		{
+			rad = findValueLine(checkArea, IMGBW_WITHE, k);
+			if (rad.x < 0 || rad.y < 0)
+				continue;
+			else
+			{
+				result = true;
+				break;
+			}
+		}
+		if (result == false)
+		{
+			y_dist = i + 1;
+			break;
+		}
+	}
+
+	//列距(x方向距离)
+	x_dist = shape.cols;
+	for (int j = 1; j < shape.cols; j++)
+	{
+		Rect checkAreaL = Rect(j, 0, shape.cols - j, shape.rows);
+		Rect checkAreaR = Rect(0, 0, shape.cols - j, shape.rows);
+		checkArea = shape(checkAreaL) & shape(checkAreaR);
+
+		// 检查检测区域是否存在样板重叠
+		Point rad;
+		bool result = false;
+		for (int k = 0; k < checkArea.rows; k++)
+		{
+			rad = findValueLine(checkArea, IMGBW_WITHE, k);
+			if (rad.x < 0 || rad.y < 0)
+				continue;
+			else
+			{
+				result = true;
+				break;
+			}
+		}
+		if (result == false)
+		{
+			x_dist = j + 1;
+			break;
+		}
+	}
+	return true;
+}
+
+/**
+* @brief 获取异形孔跳行因子
+* @param stereotype_sub 减样板
+* @param stereotype_sub_center 减样板中心
+* @param x_length stereotype_sub中有效样板的x方向最大长度（去除背景黑色之后）
+* @param y_length stereotype_sub中有效样板的y方向最大长度（去除背景黑色之后）
+* @return jumpFactor （跳跃行数）/(y_length)
+*/
+double cy_algorithm::getJumpfactor(cv::Mat & stereotype_sub, cv::Point & stereotype_sub_center, int x_length, int y_length)
+{
+	Mat backGround;
+	double jumpFactor = 1.00;
+	hconcat(stereotype_sub, stereotype_sub, backGround);
+	backGround = IMGBW_BLACK;
+	plota(backGround, stereotype_sub, stereotype_sub_center, stereotype_sub_center);
+	plota(backGround, stereotype_sub, Point(stereotype_sub_center.x + x_length, stereotype_sub_center.y), stereotype_sub_center);
+	for (int i = stereotype_sub_center.y; i < stereotype_sub.rows; i++)
+	{
+		for (int j = stereotype_sub_center.x; j < stereotype_sub_center.x + x_length; j++)
+		{
+			if (backGround.at<uchar>(i, j) == IMGBW_BLACK)
+			{
+				jumpFactor = (double)(i - stereotype_sub_center.y) / (double)(y_length);
+				return jumpFactor;
+			}
+		}
+	}
+	return jumpFactor;
+}
+
+/**
+* @brief 提取冲孔样板
+* @param img_with_stereotype 含有样板图形(RGB)
+* @return drawing 标记了样板的图像(RGB)
+*/
+cv::Mat cy_algorithm::getStereotype(cv::Mat& img_with_stereotype)
+{
+	Mat img;
+	img_with_stereotype.copyTo(img);
+
+	Mat img_gray;
+	cvtColor(img, img_gray, CV_RGB2GRAY);
+
+	Mat img_bw;
+	threshold(img_gray, img_bw, 127, 255, THRESH_BINARY);
+	//imshow("getST_img_bw", img_bw);
+
+	// Get contours
+	Mat img_for_contours;
+	img_bw.copyTo(img_for_contours);
+	std::vector<std::vector<Point> > contours;	//轮廓
+	std::vector<Vec4i> hierarchy;	//拓扑结构
+
+	// Find contours
+	findContours(img_for_contours, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+
+	// Draw contours
+	RNG rng(12345);
+	Mat drawing = Mat::zeros(img_for_contours.size(), CV_8UC3);
+	
+	/*以下注释代码为画出所有找到的样板*/
+	//std::vector<Point> boundingRectCenters(contours.size());
+	//for (int i = 0; i< contours.size(); i++)
+	//{
+	//	Scalar color = Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+	//	Scalar color_rect = Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255));
+	//	// Get bounding rect
+	//	Rect contoursRect = boundingRect(contours[i]);
+	//	// Caculate the center of bounding rect
+	//	boundingRectCenters[i] = Point(contoursRect.x + contoursRect.width / 2, contoursRect.y + contoursRect.height / 2);
+
+	//	// Draw bounding rect ,centers and contours(filled)
+	//	drawContours(drawing, contours, i, color, -1);
+	//	rectangle(drawing, contoursRect, color_rect);
+	//	circle(drawing, boundingRectCenters[i], 5, Scalar(255, 255, 255), -1);
+	//}
+	////Show in a window
+	//namedWindow("Contours", CV_WINDOW_AUTOSIZE);
+	//imshow("Contours", drawing);
+	
+	// 将contours_index所指示的contour画在画布drawing上
+	const int contours_index = 0;
+	Scalar color = Scalar(IMGBW_WITHE, IMGBW_WITHE, IMGBW_WITHE);
+	drawContours(drawing, contours, contours_index, color, -1);
+
+	// 以最小内切矩形选择画布上的样板
+	Rect contoursRect_selected = boundingRect(contours[contours_index]);
+	Rect contoursRect_selected_borderExpend = Rect(contoursRect_selected.x - 1, contoursRect_selected.y - 1, contoursRect_selected.width + 2, contoursRect_selected.height + 2);
+	Mat drawing_selected;
+	drawing(contoursRect_selected_borderExpend).copyTo(drawing_selected);
+	cvtColor(drawing_selected, drawing_selected, CV_RGB2GRAY);
+	threshold(drawing_selected, drawing_selected, 127, 255, THRESH_BINARY);
+	drawing_selected = ~drawing_selected;
+
+	return drawing_selected;
+}
+
+/**
+* @brief 设置异形冲孔控制单元
+* @param stereotype 样板图形(二值化)
+*/
+cv::Mat cy_algorithm::setStereotype(cv::Mat& stereotype)
+{
+	//原始样板
+	stereotype.copyTo(abnormity.stereotype);
+	//镜像样板
+	Mat stereotype_x_flip;
+	flip(stereotype, stereotype_x_flip, 0);
+	stereotype_x_flip.copyTo(abnormity.stereotype_x_flip);
+	//状态控制
+	abnormity.init = true;
+	abnormity.st_changed_notProc = true;
+
+	return stereotype;
+}
+
+/**
+* @brief : 减样板
+* @note : 输入为边缘二值图，白色为边缘
+*/
+Mat cy_algorithm::stereotypeSub(cv::Mat& imgbw, cv::Mat stereotype, Point center)
+{
+	cv::Mat img;
+	imgbw.copyTo(img);
+	int rows, cols;
+	rows = imgbw.rows;
+	cols = imgbw.cols;
+	int i, j;
+	for (i = 0; i < rows; i++)
+	{
+		for (j = 0; j < cols; j++)
+		{
+			if (imgbw.at<uchar>(i, j) > IMGBW_THRESH_B2W) //withe area
+			{
+				cv::Point rad = cv::Point(j, i);
+				plota(img, stereotype, rad, center);
+			}
+		}
+	}
+	return img;
+}
+
+/*
+* @brief 画一个样板形状（白色）
+* @param img 画图图像
+* @param stereotype 样板图像
+* @param rad 画图点坐标
+* @param center 样本中心点
+* @return
+*          img画好样板的图形
+*/
+cv::Mat& cy_algorithm::plota(cv::Mat& img_raw, cv::Mat&stereotype, cv::Point rad, cv::Point center)
+{
+	//过界处理
+	Mat stereotype_mod;
+	stereotype_mod = stereotype;
+	int img_roi_x = rad.x - center.x;
+	int img_roi_y = rad.y - center.y;
+	int img_roi_w = stereotype.cols;
+	int img_roi_h = stereotype.rows;
+
+	int stereotype_roi_x = 0;
+	int stereotype_roi_y = 0;
+	int stereotype_roi_w = stereotype.cols;
+	int stereotype_roi_h = stereotype.rows;
+
+	if (img_roi_x<0)
+	{
+		//顺序不可改变
+		img_roi_w = stereotype.cols + img_roi_x;
+		stereotype_roi_x = -img_roi_x;
+		stereotype_roi_w = img_roi_w;
+		img_roi_x = 0;
+	}
+	if (img_roi_y<0)
+	{
+		//顺序不可改变
+		img_roi_h = stereotype.rows + img_roi_y;
+		stereotype_roi_y = -img_roi_y;
+		stereotype_roi_h = img_roi_h;
+		img_roi_y = 0;
+	}
+	if (img_roi_x>img_raw.cols - stereotype.cols)
+	{
+		//顺序不可改变
+		img_roi_w = img_raw.cols - img_roi_x;
+		stereotype_roi_w = img_roi_w;
+	}
+	if (img_roi_y>img_raw.rows - stereotype.rows)
+	{
+		//顺序不可改变
+		img_roi_h = img_raw.rows - img_roi_y;
+		stereotype_roi_h = img_roi_h;
+	}
+
+	//中心与运算
+	Rect img_roi(img_roi_x, img_roi_y, img_roi_w, img_roi_h);
+	Rect stereotype_roi(stereotype_roi_x, stereotype_roi_y, stereotype_roi_w, stereotype_roi_h);
+	Mat img_roi_mat = img_raw(img_roi);
+	img_roi_mat = img_roi_mat | stereotype(stereotype_roi);
+	return img_raw;
+}
+
+////////////正反排孔函数//////////////
+int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+{
+	Mat img_raw, imgEdge;
+	unsigned int rows, cols;
+	int numOfPoints;
+	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+	const double scanFactor = 0; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	static double jumpFactor = 1.01; //跳行因子
+	const double x_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
+	const double y_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
+	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+
+	// 图像有效性检测
+	if (img.empty())
+	{
+		return -1;
+	}
+	img.copyTo(img_raw);
+	int debug_img_input_rows = img.rows;
+	int debug_img_input_cols = img.cols;
+
+	// 样板初始化检测
+	if (!abnormity.init)
+	{
+		return -1;
+	}
+
+	// debug duan20180225
+	int abnormity_pos_y_dist = getAbnormityPosYdist(img_raw, space);
+	// debug end
+
+
+	////////////样板处理////////////
+	//触发信号
+	static bool trigger_stereotype_changed;
+	static bool trigger_dist_changed;
+	static bool trigger_space_changed;
+	//三种基本样板(origin, with dist, with space)
+	static Mat stereotype_origin;
+	static Mat stereotype_with_dist;
+	static Mat stereotype_with_space;
+	//减中心样板（with space），用stereotype_with_space_flip沿stereotype_with_space边缘滑动形成的
+	static Mat stereotype_WS_center_sub;
+	//原始样板边缘
+	static Mat stereotype_origin_edge;
+	// 样板中心
+	static Point stereotype_origin_center;
+	static Point stereotype_ODS_expand_center;	//ODS:origin,dist,space
+	static Point stereotype_WS_center_sub_center;
+	//三种镜像样板(origin, with dist, with space)
+	static Mat stereotype_origin_flip;
+	static Mat stereotype_with_dist_flip;
+	static Mat stereotype_with_space_flip;
+	//样板基本信息(左右最大距离，上下最大距离)
+	static int stereotype_origin_x_length;
+	static int stereotype_origin_y_length;
+	static int stereotype_with_dist_x_length;
+	static int stereotype_with_dist_y_length;
+	static int stereotype_with_space_x_length;
+	static int stereotype_with_space_y_length;
+
+	// 样板改变测试
+	static bool debug_flip_test = true;	// For debug
+	if (abnormity.st_changed_notProc)
+	{
+		abnormity.st_changed_notProc = false;
+
+		//测试用例
+		Mat img_shape;
+		img_shape = abnormity.stereotype;
+		////debug duan 20180225
+		//imshow("abnormity.stereotype", abnormity.stereotype);
+		//imshow("abnormity.stereotype_x_flip", abnormity.stereotype_x_flip);
+		////debug end 20180225
+		img_shape = ~img_shape;
+		img_shape.copyTo(stereotype_origin);
+		trigger_stereotype_changed = true;
+	}
+	// dist改变测试
+	static int previous_dist = dist;
+	if (!(previous_dist == dist))
+	{
+		trigger_dist_changed = true;
+		previous_dist = dist;	//更新previous_dist变量
+	}
+
+	// space改变测试
+	static int previous_space = space;
+	if (!(previous_space == space))
+	{
+		trigger_space_changed = true;
+		previous_space = space;
+	}
+
+	if (trigger_stereotype_changed || trigger_dist_changed || trigger_space_changed)
+	{
+		// 复位触发信号
+		trigger_stereotype_changed = false;
+		trigger_dist_changed = false;
+		trigger_space_changed = false;
+
+		//----- 原始样板处理 -----//
+		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
+		{
+			return -1;
+		}
+		//原始样板中心
+		stereotype_origin_edge = edgesbw(stereotype_origin);
+		stereotype_origin_center = Point(stereotype_origin.cols, stereotype_origin.rows) / 2;
+		//样板镜像
+		flip(stereotype_origin, stereotype_origin_flip, -1);
+
+		//----- 样板扩展 -----//
+		//拓宽原始样板边缘以防超出边界
+		Mat stereotype_origin_border_expand;
+		int expand_size = max(dist, space);
+		copyMakeBorder(stereotype_origin, stereotype_origin_border_expand, expand_size, expand_size, expand_size, expand_size, BORDER_CONSTANT, IMGBW_BLACK);
+		//扩展样板中心
+		stereotype_ODS_expand_center = Point(stereotype_origin_border_expand.cols, stereotype_origin_border_expand.rows) / 2;
+		//扩展边界(border expand)样板边缘获取
+		Mat stereotype_origin_BE_edge = edgesbw(stereotype_origin_border_expand);
+
+		//----- 边距样板处理 -----//
+		//样板扩增随边距离
+		stereotype_with_dist = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, dist);
+		//扩增随边距离样板镜像
+		flip(stereotype_with_dist, stereotype_with_dist_flip, -1);
+		//扩增随边距离样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
+		{
+			return -1;
+		}
+
+		//----- 孔间隙样板处理 -----//
+		//样板扩增孔间隙
+		stereotype_with_space = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, space);
+		//扩增孔间隙样板镜像
+		flip(stereotype_with_space, stereotype_with_space_flip, -1);
+		//扩增孔间隙样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
+		{
+			return -1;
+		}
+
+		//----- 减中心样板处理(with space) -----//
+		//扩增孔间隙样板边界扩展
+		Mat stereotype_with_space_expended;
+		int vertical_ex_size = stereotype_with_space.rows / 2;
+		int horizon_ex_size = stereotype_with_space.cols / 2;
+		copyMakeBorder(stereotype_with_space, stereotype_with_space_expended, vertical_ex_size, vertical_ex_size, horizon_ex_size, horizon_ex_size, BORDER_CONSTANT, IMGBW_BLACK);
+		Mat stereotype_with_space_expended_edge = edgesbw(stereotype_with_space_expended);
+		//获取减中心样板
+		stereotype_WS_center_sub = stereotype_with_space_expended | stereotypeSub(stereotype_with_space_expended_edge, stereotype_with_space_flip, stereotype_ODS_expand_center);
+		//减中心样板中心
+		stereotype_WS_center_sub_center = Point(stereotype_WS_center_sub.cols, stereotype_WS_center_sub.rows) / 2;
+
+		//----- 获取跳行因子-----//
+		//jumpFactor = getJumpfactor(stereotype_WS_center_sub, stereotype_WS_center_sub_center, stereotype_with_space_x_length, stereotype_with_space_y_length);
+		if (superNarrow)
+		{
+			jumpFactor = 0.01;
+		}
+
+		////Debug
+		//cv::circle(stereotype_WS_center_sub, stereotype_WS_center_sub_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_WS_center_sub", stereotype_WS_center_sub);
+
+		//cv::circle(stereotype_with_dist, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_dist", stereotype_with_dist);
+
+		//cv::circle(stereotype_with_space, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_space", stereotype_with_space);
+		////Debug end
+	}
+	/////////////////////////////////////////////////////////////////////////////////
+	// 增加/减少额外x,y方向间距
+	stereotype_with_space_x_length *= x_extra_space_factor;
+	stereotype_with_space_y_length *= y_extra_space_factor;
+
+	/// Image concat
+	static Mat img_remain, last_frameRaw, img_rawRaw;
+	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
+	int img_remain_h_limit = (int)(img_raw.rows);
+	if (img_remain_h > img_remain_h_limit)
+		return -1;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (overLap>img_remain_h)
+		img_remain_h = overLap;
+	if (img_remain.empty())  //第一帧用空白填充连接部分
+	{
+		img_raw.copyTo(img_remain);
+		img_raw.copyTo(last_frameRaw);
+		img_remain = IMGBW_WITHE;
+		last_frameRaw = IMGBW_WITHE;
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			if (img_cpartRem.cols == img_cpartNow.cols)
+			{
+				vconcat(img_cpartRem, img_cpartNow, img_raw);
+				vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+			}
+			else
+			{
+				img_cpartNow.copyTo(img_raw);
+				img_cpartNowRaw.copyTo(img_rawRaw);
+			}
+		}
+	}
+	else
+	{
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			img_cpartNow.copyTo(img_raw);
+			img_cpartNowRaw.copyTo(img_rawRaw);
+		}
+	}
+	img_raw.copyTo(img_remain);
+	img_raw.copyTo(last_frameRaw);
+
+	// Debug
+	///结果显示 1
+	Mat img_remain_Debug;
+	img_remain.copyTo(img_remain_Debug);
+	//imshow("img_remain", img_remain);
+	// Debug End
+
+	/// 显示图像信息
+	rows = img_raw.rows;
+	cols = img_raw.cols;
+
+	/// 随边处理
+	Mat img_rawRawEdge = edgesbw(img_rawRaw);
+	img_rawRawEdge.col(0) = IMGBW_WITHE;
+	img_rawRawEdge.col(cols - 1) = IMGBW_WITHE;
+	img_rawRaw = img_rawRaw | circleSub(img_rawRawEdge, dist);
+
+	/// 随边与冲孔图像整合
+	img_raw = img_raw | img_rawRaw;
+
+	/// 得到整合图像边缘
+	imgEdge = edgesbw(img_raw);
+
+	/// 加边框边界，若不需要，移除以下四条语句
+	imgEdge.row(0) = IMGBW_WITHE;
+	imgEdge.row(rows - 1) = IMGBW_WITHE;
+	imgEdge.col(0) = IMGBW_WITHE;
+	imgEdge.col(cols - 1) = IMGBW_WITHE;
+
+	/// 得到首个圆心区域
+	//img_raw = img_raw | circleSub(imgEdge, radius);
+	img_raw = img_raw | stereotypeSub(imgEdge, stereotype_origin_flip, stereotype_origin_center);
+
+
+	// Debug
+	// imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 主处理循环，获得像素坐标点集合
+	Point rad;
+	vec.clear();
+	int num = 0;
+	int rowStart;
+
+	///减去上一帧最后两行得到顶部圆心区域
+	static QVector<cv::Point> lastFramelastRVec;
+	Point lastFramePoint = Point(cols, rows);
+	if (lastFramelastRVec.length()>0)
+	{
+		lastFramePoint = lastFramelastRVec.last();
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = img_remain_h - lastFramelastRVec[k].y;
+
+			//防止stereotype_WS_center_sub与img_raw无交集导致的plota()中roi高度为负值的异常
+			if (stereotype_WS_center_sub.rows + lastFramelastRVec[k].y - stereotype_WS_center_sub_center.y > 0)
+			{
+				//plotc(img_raw, lastFramelastRVec[k], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, lastFramelastRVec[k], stereotype_WS_center_sub_center);
+			}
+		}
+	}
+	// Debug
+	//imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 连接图像扫描首行值
+	//rowStart = img_remain_h - lastFramePoint.y + (radius + space*0.5f)*1.732f + 1;
+	rowStart = img_remain_h - lastFramePoint.y + (int)(abnormity_pos_y_dist*jumpFactor) + 1;
+
+	//{
+	/// 补足前一帧最后一行冲孔
+	int lastFrameLastrow = img_remain_h - lastFramePoint.y + 2;
+	if (lastFrameLastrow > 0)
+	{
+		for (int j = 0; j<(int)cols;) //Col scan
+		{
+			if (img_raw.at<uchar>(lastFrameLastrow, j) == IMGBW_BLACK)
+			{
+				rad.x = j;
+				rad.y = lastFrameLastrow + 1;
+				vec.append(rad);
+				/// 拼接图冲孔
+				//plotc(img_remain, rad, radius);
+				plota(img_remain, stereotype_origin, rad, stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, rad, 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, rad, stereotype_ODS_expand_center);
+
+				//j += 2 * radius + space;
+				j += stereotype_with_space_x_length;
+			}
+			else
+				j += 1;
+		}
+	}
+
+	if (rowStart < 0)
+	{
+		rowStart = 0;
+	}
+
+	/// 冲压处理
+	MRCYU mrpoints;
+	mrpoints.vec.clear();
+
+	//{
+	QVector<cv::Point> pointsVecBuf;
+	pointsVecBuf.clear();
+
+	for (int i = rowStart; i < (int)rows;)   // Row scan
+	{
+		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		if (rad.x<0 || rad.y<0)
+		{
+			i++;
+		}
+		else
+		{
+			bool existValidPoint = false;
+			int linePoints = 0;
+
+			//在ScanRange内扫描，得到最大行冲压单元
+			////////////////////////////////////////////////
+			//int ScanRange = (int)(0.3f*(radius + space*0.5f)); 
+			int ScanRange = (int)(scanFactor*(stereotype_with_space_y_length *(1 / y_extra_space_factor)));
+			///////////////////////////////////////////////////
+
+			pointsVecBuf = mrpoints.vec;
+			mrpoints.vec.clear();
+			mrpoints.maxNum = mrpoints.vec.length();
+			mrpoints.lineInd = i;
+
+			for (int r_index = i; (r_index<rows) && (r_index <= i + ScanRange); r_index++)// Scan Range
+			{
+				QVector<cv::Point> tmpvec;
+				tmpvec.clear();
+
+				for (int j = 0; j<(int)cols;) //Col scan
+				{
+					if (img_raw.at<uchar>(r_index, j) == IMGBW_BLACK)
+					{
+						existValidPoint = true;
+						/// 像素坐标数组
+						rad.x = j;
+						rad.y = r_index;
+						tmpvec.append(rad);
+						//j += 2 * radius + space;
+						j += stereotype_with_space_x_length;
+
+					}
+					else
+					{
+						//j += 1;
+						j += stereotype_with_space_x_length;
+
+					}
+				}
+
+				//更新最大行冲压单元
+				if (tmpvec.length()>mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = r_index;
+					mrpoints.vec = tmpvec;
+				}
+				/// If the points number is bigger than CY_maxStep then stop
+				if (num + mrpoints.maxNum >= CY_MAXSTEP) break;
+			}
+
+			///以行最后一个点为起点反冲一次，避免大间距
+			if (mrpoints.maxNum>0)
+			{
+				Point lineLastPoint = mrpoints.vec.last();
+				Point resort_rad;
+				QVector<cv::Point> tmpvec;
+				for (int j = lineLastPoint.x; j>0; j -= stereotype_with_space_x_length/*2 * radius + space*/) //Col scan
+				{
+					if (img_raw.at<uchar>(lineLastPoint.y, j) == IMGBW_BLACK)
+					{
+						/// 像素坐标数组
+						resort_rad.x = j;
+						resort_rad.y = lineLastPoint.y;
+						tmpvec.append(resort_rad);
+					}
+				}
+				//如果反冲数量不减少，则最大行冲压单元更新为反冲结果，以此避免大间距
+				//if(tmpvec.length()>=mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = lineLastPoint.y;
+					mrpoints.vec = tmpvec;
+				}
+			}
+			///更新特征量
+			linePoints = mrpoints.maxNum;
+			num += linePoints;
+			i = mrpoints.lineInd;
+			vec += mrpoints.vec;
+
+			///拼接图冲孔和当前行去圆形区域
+			for (int j = 0; j<mrpoints.maxNum; j++)
+			{
+				/// 拼接图冲孔
+				//plotc(img_remain, mrpoints.vec[j], radius);
+				plota(img_remain, stereotype_origin, mrpoints.vec[j], stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, mrpoints.vec[j], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, mrpoints.vec[j], stereotype_WS_center_sub_center);
+
+				////Debug
+				//imshow("img_remain", img_remain);
+				//imshow("img_raw", img_raw);
+				////End Debug
+			}
+
+			/// 更新下一行
+			if (existValidPoint)
+			{
+				//i += (radius + space*0.5f)*1.732f;   //sqr(3)=1.732f
+				i += (int)(abnormity_pos_y_dist*jumpFactor);
+			}
+			else
+			{
+				i += 1;
+			}
+
+			/// Debug 若最后一行的冲孔可以在下一帧拼接后完成，中断当前帧处理
+			//if (rows - i + radius + (int)(space / 2) < img_remain_h)
+			//	break;
+			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h)
+				break;
+
+		}
+	}
+
+
+	///得到点集有效个数
+	numOfPoints = vec.size();
+
+	///更新一帧最后一行冲孔
+	if (numOfPoints>0)
+	{
+		//{
+		lastFramelastRVec = pointsVecBuf + mrpoints.vec;
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = rows - lastFramelastRVec[k].y;
+		}
+	}
+	else
+		lastFramelastRVec.clear();
+
+	///冲压顺序排序（像素点）
+	vec = pointPixForwardSort(vec);
+
+	/// 图像拼接与最后一行冲点坐标修正
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		vec[j].y -= img_remain_h;   //remain concat modify
+		vec[j].y += overLap;    // overlap modify
+	}
+
+	// Debug
+	///结果显示 1
+	img = img_remain_Debug;
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		/// 坐标映射与输出
+		std::cout << vec[j] << std::endl;
+		/// 冲压结果画圆
+		Point tmp_Point(vec[j]);
+		tmp_Point.y -= overLap;
+		tmp_Point.y += img_remain_h;
+		//cv::circle(img, tmp_Point, radius, cv::Scalar(255, 255, 255), 1);
+		plota(img, stereotype_origin_edge, tmp_Point, stereotype_origin_center);
+		/// 顺序显示
+		//cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(radius / 5.0, -radius / 5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+		cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(stereotype_origin_center.x / 5.0, -stereotype_origin_center.y / 5.0), CV_FONT_HERSHEY_COMPLEX, stereotype_origin_center.x*1.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+
+	}
+	// Debug end
+
+	// Debug: save processed image
+	static int debug_img_index = 6;
+	Mat debug_img_save = img_remain.clone();
+	debug_img_save = debug_img_save(Rect(0, 0, debug_img_input_cols, debug_img_input_rows));
+	flip(debug_img_save, debug_img_save, -1);
+	String debug_img_name = String("images\\Pos_images\\Positive_test_")+String(std::to_string(debug_img_index))+String(".jpg");
+	imwrite(debug_img_name, debug_img_save);
+	debug_img_index -= 1;
+	if (debug_img_index <= 0)
+	{
+		debug_img_index = 6;
+	}
+
+	return numOfPoints;
+}
+
+int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+{
+	Mat img_raw, imgEdge;
+	unsigned int rows, cols;
+	int numOfPoints;
+	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+	const double scanFactor = 0.7; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	static double jumpFactor = 0.7; //跳行因子
+	const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
+	const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
+	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+
+	// 图像有效性检测
+	if (img.empty())
+	{
+		return -1;
+	}
+	img.copyTo(img_raw);
+
+	// 样板初始化检测
+	if (!abnormity.init)
+	{
+		return -1;
+	}
+
+	// debug duan20180225
+	int abnormity_pos_y_dist = getAbnormityPosYdist(img, space);
+	// debug end
+
+	////////////样板处理////////////
+	//触发信号
+	static bool trigger_stereotype_changed;
+	static bool trigger_dist_changed;
+	static bool trigger_space_changed;
+	//三种基本样板(origin, with dist, with space)
+	static Mat stereotype_origin;
+	static Mat stereotype_with_dist;
+	static Mat stereotype_with_space;
+	//减中心样板（with space），用stereotype_with_space_flip沿stereotype_with_space边缘滑动形成的
+	static Mat stereotype_WS_center_sub;
+	//原始样板边缘
+	static Mat stereotype_origin_edge;
+	// 样板中心
+	static Point stereotype_origin_center;
+	static Point stereotype_ODS_expand_center;	//ODS:origin,dist,space
+	static Point stereotype_WS_center_sub_center;
+	//三种镜像样板(origin, with dist, with space)
+	static Mat stereotype_origin_flip;
+	static Mat stereotype_with_dist_flip;
+	static Mat stereotype_with_space_flip;
+	//样板基本信息(左右最大距离，上下最大距离)
+	static int stereotype_origin_x_length;
+	static int stereotype_origin_y_length;
+	static int stereotype_with_dist_x_length;
+	static int stereotype_with_dist_y_length;
+	static int stereotype_with_space_x_length;
+	static int stereotype_with_space_y_length;
+
+	// 样板改变测试
+	if (abnormity.st_changed_notProc)
+	{
+		abnormity.st_changed_notProc = false;
+
+		//测试用例
+		Mat img_shape;
+		img_shape = abnormity.stereotype;
+		img_shape = ~img_shape;
+		img_shape.copyTo(stereotype_origin);
+		trigger_stereotype_changed = true;
+	}
+	// dist改变测试
+	static int previous_dist = dist;
+	if (!(previous_dist == dist))
+	{
+		trigger_dist_changed = true;
+		previous_dist = dist;	//更新previous_dist变量
+	}
+
+	// space改变测试
+	static int previous_space = space;
+	if (!(previous_space == space))
+	{
+		trigger_space_changed = true;
+		previous_space = space;
+	}
+
+	if (trigger_stereotype_changed || trigger_dist_changed || trigger_space_changed)
+	{
+		// 复位触发信号
+		trigger_stereotype_changed = false;
+		trigger_dist_changed = false;
+		trigger_space_changed = false;
+
+		//----- 原始样板处理 -----//
+		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
+		{
+			return -1;
+		}
+		//原始样板中心
+		stereotype_origin_edge = edgesbw(stereotype_origin);
+		stereotype_origin_center = Point(stereotype_origin.cols, stereotype_origin.rows) / 2;
+		//样板镜像
+		flip(stereotype_origin, stereotype_origin_flip, -1);
+
+		//----- 样板扩展 -----//
+		//拓宽原始样板边缘以防超出边界
+		Mat stereotype_origin_border_expand;
+		int expand_size = max(dist, space);
+		copyMakeBorder(stereotype_origin, stereotype_origin_border_expand, expand_size, expand_size, expand_size, expand_size, BORDER_CONSTANT, IMGBW_BLACK);
+		//扩展样板中心
+		stereotype_ODS_expand_center = Point(stereotype_origin_border_expand.cols, stereotype_origin_border_expand.rows) / 2;
+		//扩展边界(border expand)样板边缘获取
+		Mat stereotype_origin_BE_edge = edgesbw(stereotype_origin_border_expand);
+
+		//----- 边距样板处理 -----//
+		//样板扩增随边距离
+		stereotype_with_dist = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, dist);
+		//扩增随边距离样板镜像
+		flip(stereotype_with_dist, stereotype_with_dist_flip, -1);
+		//扩增随边距离样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
+		{
+			return -1;
+		}
+
+		//----- 孔间隙样板处理 -----//
+		//样板扩增孔间隙
+		stereotype_with_space = stereotype_origin_border_expand | circleSub(stereotype_origin_BE_edge, space);
+		//扩增孔间隙样板镜像
+		flip(stereotype_with_space, stereotype_with_space_flip, -1);
+		//扩增孔间隙样板信息获取
+		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
+		{
+			return -1;
+		}
+
+		//----- 减中心样板处理(with space) -----//
+		//扩增孔间隙样板边界扩展
+		Mat stereotype_with_space_expended;
+		int vertical_ex_size = stereotype_with_space.rows / 2;
+		int horizon_ex_size = stereotype_with_space.cols / 2;
+		copyMakeBorder(stereotype_with_space, stereotype_with_space_expended, vertical_ex_size, vertical_ex_size, horizon_ex_size, horizon_ex_size, BORDER_CONSTANT, IMGBW_BLACK);
+		Mat stereotype_with_space_expended_edge = edgesbw(stereotype_with_space_expended);
+		//获取减中心样板
+		stereotype_WS_center_sub = stereotype_with_space_expended | stereotypeSub(stereotype_with_space_expended_edge, stereotype_with_space_flip, stereotype_ODS_expand_center);
+		//减中心样板中心
+		stereotype_WS_center_sub_center = Point(stereotype_WS_center_sub.cols, stereotype_WS_center_sub.rows) / 2;
+
+		//----- 获取跳行因子-----//
+		//jumpFactor = getJumpfactor(stereotype_WS_center_sub, stereotype_WS_center_sub_center, stereotype_with_space_x_length, stereotype_with_space_y_length);
+		if (superNarrow)
+		{
+			jumpFactor = 0.01;
+		}
+
+		////Debug
+		//cv::circle(stereotype_WS_center_sub, stereotype_WS_center_sub_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_WS_center_sub", stereotype_WS_center_sub);
+
+		//cv::circle(stereotype_with_dist, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_dist", stereotype_with_dist);
+
+		//cv::circle(stereotype_with_space, stereotype_ODS_expand_center, 4, cv::Scalar(0, 0, 0), 1);
+		//imshow("stereotype_with_space", stereotype_with_space);
+		////Debug end
+	}
+	/////////////////////////////////////////////////////////////////////////////////
+	// 增加额外x,y方向间距
+	stereotype_with_space_x_length *= x_extra_space_factor;
+	stereotype_with_space_y_length *= y_extra_space_factor;
+
+	/// Image concat
+	static Mat img_remain, last_frameRaw, img_rawRaw;
+	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
+	int img_remain_h_limit = (int)(img_raw.rows);
+	if (img_remain_h > img_remain_h_limit)
+		return -1;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (overLap>img_remain_h)
+		img_remain_h = overLap;
+	if (img_remain.empty())  //第一帧用空白填充连接部分
+	{
+		img_raw.copyTo(img_remain);
+		img_raw.copyTo(last_frameRaw);
+		img_remain = IMGBW_WITHE;
+		last_frameRaw = IMGBW_WITHE;
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			if (img_cpartRem.cols == img_cpartNow.cols)
+			{
+				vconcat(img_cpartRem, img_cpartNow, img_raw);
+				vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+			}
+			else
+			{
+				img_cpartNow.copyTo(img_raw);
+				img_cpartNowRaw.copyTo(img_rawRaw);
+			}
+		}
+	}
+	else
+	{
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			img_cpartNow.copyTo(img_raw);
+			img_cpartNowRaw.copyTo(img_rawRaw);
+		}
+	}
+	img_raw.copyTo(img_remain);
+	img_raw.copyTo(last_frameRaw);
+
+	// Debug
+	///结果显示 1
+	Mat img_remain_Debug;
+	img_remain.copyTo(img_remain_Debug);
+	//imshow("img_remain", img_remain);
+	// Debug End
+
+	/// 显示图像信息
+	rows = img_raw.rows;
+	cols = img_raw.cols;
+
+	/// 随边处理
+	Mat img_rawRawEdge = edgesbw(img_rawRaw);
+	img_rawRawEdge.col(0) = IMGBW_WITHE;
+	img_rawRawEdge.col(cols - 1) = IMGBW_WITHE;
+	img_rawRaw = img_rawRaw | circleSub(img_rawRawEdge, dist);
+
+	/// 随边与冲孔图像整合
+	img_raw = img_raw | img_rawRaw;
+
+	/// 得到整合图像边缘
+	imgEdge = edgesbw(img_raw);
+
+	/// 加边框边界，若不需要，移除以下四条语句
+	imgEdge.row(0) = IMGBW_WITHE;
+	imgEdge.row(rows - 1) = IMGBW_WITHE;
+	imgEdge.col(0) = IMGBW_WITHE;
+	imgEdge.col(cols - 1) = IMGBW_WITHE;
+
+	/// 得到首个圆心区域
+	//img_raw = img_raw | circleSub(imgEdge, radius);
+	img_raw = img_raw | stereotypeSub(imgEdge, stereotype_origin_flip, stereotype_origin_center);
+
+
+	// Debug
+	// imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 主处理循环，获得像素坐标点集合
+	Point rad;
+	vec.clear();
+	int num = 0;
+	int rowStart;
+
+	///减去上一帧最后两行得到顶部圆心区域
+	static QVector<cv::Point> lastFramelastRVec;
+	Point lastFramePoint = Point(cols, rows);
+	if (lastFramelastRVec.length()>0)
+	{
+		lastFramePoint = lastFramelastRVec.last();
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = img_remain_h - lastFramelastRVec[k].y;
+
+			//防止stereotype_WS_center_sub与img_raw无交集导致的plota()中roi高度为负值的异常
+			if (stereotype_WS_center_sub.rows + lastFramelastRVec[k].y - stereotype_WS_center_sub_center.y > 0)
+			{
+				//plotc(img_raw, lastFramelastRVec[k], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, lastFramelastRVec[k], stereotype_WS_center_sub_center);
+			}
+		}
+	}
+	// Debug
+	//imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 连接图像扫描首行值
+	//rowStart = img_remain_h - lastFramePoint.y + (radius + space*0.5f)*1.732f + 1;
+	rowStart = img_remain_h - lastFramePoint.y + (int)(stereotype_with_space_y_length*jumpFactor) + 1;
+
+	//{
+	/// 补足前一帧最后一行冲孔
+	int lastFrameLastrow = img_remain_h - lastFramePoint.y + 2;
+	if (lastFrameLastrow > 0)
+	{
+		for (int j = 0; j<(int)cols;) //Col scan
+		{
+			if (img_raw.at<uchar>(lastFrameLastrow, j) == IMGBW_BLACK)
+			{
+				rad.x = j;
+				rad.y = lastFrameLastrow + 1;
+				vec.append(rad);
+				/// 拼接图冲孔
+				//plotc(img_remain, rad, radius);
+				plota(img_remain, stereotype_origin, rad, stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, rad, 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, rad, stereotype_ODS_expand_center);
+
+				//j += 2 * radius + space;
+				j += stereotype_with_space_x_length;
+			}
+			else
+				j += 1;
+		}
+	}
+
+	if (rowStart < 0)
+	{
+		rowStart = 0;
+	}
+
+	/// 冲压处理
+	MRCYU mrpoints;
+	mrpoints.vec.clear();
+
+	//{
+	QVector<cv::Point> pointsVecBuf;
+	pointsVecBuf.clear();
+
+	for (int i = rowStart; i < (int)rows;)   // Row scan
+	{
+		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		if (rad.x<0 || rad.y<0)
+		{
+			i++;
+		}
+		else
+		{
+			bool existValidPoint = false;
+			int linePoints = 0;
+
+			//在ScanRange内扫描，得到最大行冲压单元
+			////////////////////////////////////////////////
+			//int ScanRange = (int)(0.3f*(radius + space*0.5f)); 
+			int ScanRange = (int)(scanFactor*(abnormity_pos_y_dist *(1 / y_extra_space_factor)));
+			///////////////////////////////////////////////////
+
+			pointsVecBuf = mrpoints.vec;
+			mrpoints.vec.clear();
+			mrpoints.maxNum = mrpoints.vec.length();
+			mrpoints.lineInd = i;
+
+			for (int r_index = i; (r_index<rows) && (r_index<i + ScanRange); r_index++)// Scan Range
+			{
+				QVector<cv::Point> tmpvec;
+				tmpvec.clear();
+
+				for (int j = 0; j<(int)cols;) //Col scan
+				{
+					if (img_raw.at<uchar>(r_index, j) == IMGBW_BLACK)
+					{
+						existValidPoint = true;
+						/// 像素坐标数组
+						rad.x = j;
+						rad.y = r_index;
+						tmpvec.append(rad);
+						//j += 2 * radius + space;
+						j += stereotype_with_space_x_length;
+
+					}
+					else
+					{
+						j += 1;
+					}
+				}
+
+				//更新最大行冲压单元
+				if (tmpvec.length()>mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = r_index;
+					mrpoints.vec = tmpvec;
+				}
+				/// If the points number is bigger than CY_maxStep then stop
+				if (num + mrpoints.maxNum >= CY_MAXSTEP) break;
+			}
+
+			///以行最后一个点为起点反冲一次，避免大间距
+			if (mrpoints.maxNum>0)
+			{
+				Point lineLastPoint = mrpoints.vec.last();
+				Point resort_rad;
+				QVector<cv::Point> tmpvec;
+				for (int j = lineLastPoint.x; j>0; j -= stereotype_with_space_x_length/*2 * radius + space*/) //Col scan
+				{
+					if (img_raw.at<uchar>(lineLastPoint.y, j) == IMGBW_BLACK)
+					{
+						/// 像素坐标数组
+						resort_rad.x = j;
+						resort_rad.y = lineLastPoint.y;
+						tmpvec.append(resort_rad);
+					}
+				}
+				//如果反冲数量不减少，则最大行冲压单元更新为反冲结果，以此避免大间距
+				//if(tmpvec.length()>=mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = lineLastPoint.y;
+					mrpoints.vec = tmpvec;
+				}
+			}
+			///更新特征量
+			linePoints = mrpoints.maxNum;
+			num += linePoints;
+			i = mrpoints.lineInd;
+			vec += mrpoints.vec;
+
+			///拼接图冲孔和当前行去圆形区域
+			for (int j = 0; j<mrpoints.maxNum; j++)
+			{
+				/// 拼接图冲孔
+				//plotc(img_remain, mrpoints.vec[j], radius);
+				plota(img_remain, stereotype_origin, mrpoints.vec[j], stereotype_origin_center);
+				/// 得到新的圆心区域
+				//plotc(img_raw, mrpoints.vec[j], 2 * radius + space);
+				plota(img_raw, stereotype_WS_center_sub, mrpoints.vec[j], stereotype_WS_center_sub_center);
+
+				////Debug
+				//imshow("img_remain", img_remain);
+				//imshow("img_raw", img_raw);
+				////End Debug
+			}
+
+			/// 更新下一行
+			if (existValidPoint)
+			{
+				//i += (radius + space*0.5f)*1.732f;   //sqr(3)=1.732f
+				i += (int)(abnormity_pos_y_dist*jumpFactor);
+			}
+			else
+			{
+				i += 1;
+			}
+
+			/// Debug 若最后一行的冲孔可以在下一帧拼接后完成，中断当前帧处理
+			//if (rows - i + radius + (int)(space / 2) < img_remain_h)
+			//	break;
+			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h)
+				break;
+
+		}
+	}
+
+
+	///得到点集有效个数
+	numOfPoints = vec.size();
+
+	///更新一帧最后一行冲孔
+	if (numOfPoints>0)
+	{
+		//{
+		lastFramelastRVec = pointsVecBuf + mrpoints.vec;
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = rows - lastFramelastRVec[k].y;
+		}
+	}
+	else
+		lastFramelastRVec.clear();
+
+	///冲压顺序排序（像素点）
+	vec = pointPixForwardSort(vec);
+
+	/// 图像拼接与最后一行冲点坐标修正
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		vec[j].y -= img_remain_h;   //remain concat modify
+		vec[j].y += overLap;    // overlap modify
+	}
+
+	// Debug
+	///结果显示 1
+	img = img_remain_Debug;
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		/// 坐标映射与输出
+		std::cout << vec[j] << std::endl;
+		/// 冲压结果画圆
+		Point tmp_Point(vec[j]);
+		tmp_Point.y -= overLap;
+		tmp_Point.y += img_remain_h;
+		//cv::circle(img, tmp_Point, radius, cv::Scalar(255, 255, 255), 1);
+		plota(img, stereotype_origin_edge, tmp_Point, stereotype_origin_center);
+		/// 顺序显示
+		//cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(radius / 5.0, -radius / 5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+		cv::putText(img, String(std::to_string(j + 1)), tmp_Point - cv::Point(stereotype_origin_center.x / 5.0, -stereotype_origin_center.y / 5.0), CV_FONT_HERSHEY_COMPLEX, stereotype_origin_center.x*1.0 / CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+
+	}
+	// Debug end
+
+	return numOfPoints;
+}
+
+
+/**
+* @brief 得到正向排纵向跳行距离
+*/
+int cy_algorithm::getAbnormityPosYdist(cv::Mat& img, int space)
+{
+	Mat stereotype_origin = ~abnormity.stereotype.clone();
+	flip(stereotype_origin, stereotype_origin, 0); // debug test
+
+	Mat stereotype_x_flip = ~abnormity.stereotype_x_flip.clone();
+	flip(stereotype_x_flip, stereotype_x_flip, 0); // debug test
+
+
+	Mat stereotype_origin_flip;
+	Mat stereotype_x_flip_flip;
+	static int stereotype_origin_x_length;
+	static int stereotype_origin_y_length;
+
+	//----- 原始样板处理 -----//
+	if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
+	{
+		return -1;
+	}
+	//原始样板中心
+	Point stereotype_origin_center = Point(stereotype_origin.cols, stereotype_origin.rows) / 2;
+	//样板镜像
+	flip(stereotype_origin, stereotype_origin_flip, -1);
+	flip(stereotype_x_flip, stereotype_x_flip_flip, -1);
+
+	Mat canvas = Mat(stereotype_origin.rows*3, stereotype_origin.cols*2, img.type());
+	canvas = IMGBW_BLACK;
+
+	plota(canvas, stereotype_origin, Point(stereotype_origin_x_length /2, canvas.rows / 2), stereotype_origin_center);
+	plota(canvas, stereotype_origin, Point(stereotype_origin_x_length /2 + stereotype_origin_x_length, canvas.rows / 2), stereotype_origin_center);
+	
+	/// 得到边缘
+	int cols = canvas.cols;
+	int rows = canvas.rows;
+	Mat canvasEdge = edgesbw(canvas);
+	canvasEdge.col(0) = IMGBW_WITHE;
+	canvasEdge.col(cols-1) = IMGBW_WITHE;
+	//imshow("getAbnormityPosNegInfo.canvasEdge", canvasEdge);
+
+	/// 得到首个圆心区域（stereotype_x_flip）
+	canvas = canvas | stereotypeSub(canvasEdge, stereotype_x_flip_flip, stereotype_origin_center);
+
+	// 得到纵向跳行值
+	int r_index = canvas.rows / 2;
+	Point next_point_down;
+	Point next_point_up;
+	int y_dist_down = 0;
+	int y_dist_up = 0;
+
+	for (int i = r_index; i < canvas.rows; i++)
+	{
+		Point rad = findValueLine(canvas, IMGBW_BLACK, i);
+		if (rad.x>=0 && rad.y>=0)
+		{
+			next_point_down = rad;
+			y_dist_down = rad.y - r_index;
+			break;
+		}
+	}
+
+	for (int i = r_index; i < canvas.rows; i--)
+	{
+		if (canvas.at<uchar>(i, next_point_down.x) == IMGBW_BLACK)
+		{
+			next_point_up.x = next_point_down.x;
+			next_point_up.y = i;
+			y_dist_up = r_index - next_point_up.y;
+			break;
+		}
+	}
+	int abnormity_pos_y_dist = y_dist_down + y_dist_up;
+	//int abnormity_pos_y_dist = y_dist_down + y_dist_up + space*2;
+
+	//plota(canvasEdge, stereotype_x_flip, next_point_down, stereotype_origin_center);
+	//plota(canvasEdge, stereotype_x_flip, next_point_down + Point(stereotype_origin_x_length, 0), stereotype_origin_center);
+	//plota(canvasEdge, stereotype_x_flip, next_point_up, stereotype_origin_center);
+	//plota(canvasEdge, stereotype_x_flip, next_point_up+Point(stereotype_origin_x_length, 0), stereotype_origin_center);
+	//imshow("getAbnormityPosNegInfo", canvasEdge);
+
+	return abnormity_pos_y_dist;
+}
+
+
+
 
 ////////////画实心形状//////////////
 /*
