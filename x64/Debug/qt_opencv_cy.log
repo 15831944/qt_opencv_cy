@@ -1,13 +1,27 @@
-﻿  mainwindow.cpp
+﻿  cy_algorithm.cpp
 D:\opencv\opencv\build\include\opencv2/core/mat.hpp(1965): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/persistence.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
 D:\opencv\opencv\build\include\opencv2/core/utility.hpp : warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失
-f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(18): warning C4005: “IMGBW_BLACK”: 宏重定义
-  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(14): note: 参见“IMGBW_BLACK”的前一个定义
-f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(19): warning C4005: “IMGBW_WITHE”: 宏重定义
-  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(15): note: 参见“IMGBW_WITHE”的前一个定义
-f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\cy_algorithm.h(20): warning C4005: “IMGBW_THRESH_B2W”: 宏重定义
-  f:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\globalParam.h(16): note: 参见“IMGBW_THRESH_B2W”的前一个定义
+cy_algorithm.cpp(833): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(928): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(1263): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(1358): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(1663): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2063): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2719): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(2497): warning C4189: “firstFrameLine”: 局部变量已初始化但不引用
+cy_algorithm.cpp(3068): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(3093): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(3210): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(3679): warning C4018: “>”: 有符号/无符号不匹配
+cy_algorithm.cpp(3696): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(3791): warning C4018: “>”: 有符号/无符号不匹配
+cy_algorithm.cpp(4510): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(4607): warning C4018: “>”: 有符号/无符号不匹配
+cy_algorithm.cpp(5051): warning C4018: “<”: 有符号/无符号不匹配
+cy_algorithm.cpp(5146): warning C4018: “>”: 有符号/无符号不匹配
+cy_algorithm.cpp(5205): warning C4100: “space”: 未引用的形参
+cy_algorithm.cpp(5238): warning C4189: “rows”: 局部变量已初始化但不引用
   qt_opencv_cy.vcxproj -> F:\project vs\qt_opencv_cy_20180127\qt_opencv_cy\debug\qt_opencv_cy.exe
   qt_opencv_cy.vcxproj -> debug\qt_opencv_cy.pdb (Full PDB)

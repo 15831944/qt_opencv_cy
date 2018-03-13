@@ -1017,6 +1017,440 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
 }
 
 /*
+* @brief 圆形主处理(不后退)--随边智能横排
+* @param img opencv二值化图像
+* @param radius 冲孔半径
+* @param dist 随边间距
+* @param space 冲孔间距
+* @param vec 点序列
+* @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param double scanRange_factor [=0.22]料片非头部扫描范围参数
+* @return:
+*		<0: 函数运行错误
+*		other:	冲孔个数
+* @note 修改记录
+*		build180313:冲压机镜像后冲压算法
+*/
+int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
+{
+	Mat img_raw, imgEdge;
+	unsigned int rows, cols;
+	int numOfPoints;
+	Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+
+										   //料片扫描范围参数约束
+	const double scanRange_factor_MIN = 0.1;
+	const double scanRange_factor_MAX = 0.3;
+	if (scanRange_factor > scanRange_factor_MAX)
+		scanRange_factor = scanRange_factor_MAX;
+	else if (scanRange_factor < scanRange_factor_MIN)
+		scanRange_factor = scanRange_factor_MIN;
+
+
+	/// 图像有效性检测
+	if (img.empty())
+	{
+		return -1;
+	}
+	//image flip for mirror
+	flip(img, img, 1);
+	img.copyTo(img_raw);
+
+	/// Image concat
+	static Mat img_remain, last_frameRaw, img_rawRaw;
+	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//    int img_remain_h = (int)img_raw.rows/3.0;   ///拼接高度，如果要保证半径为r绝对不出错，h>2r+1,否则小概率出错,当h=图像高度，绝对不出错，但是计算很大
+	//modified by czh 20170615
+	int img_remain_h = (int)(radius + space)*2.5;
+	int img_remain_h_without_overlap = img_remain_h;
+	int img_remain_h_limit = (int)(img_raw.rows);
+	if (img_remain_h > img_remain_h_limit)
+		return -1;
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (overLap>img_remain_h)
+		img_remain_h = overLap;
+	if (img_remain.empty())  //第一帧用空白填充连接部分
+	{
+		img_raw.copyTo(img_remain);
+		img_raw.copyTo(last_frameRaw);
+		img_remain = IMGBW_WITHE;
+		last_frameRaw = IMGBW_WITHE;
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+
+		// 首帧后退处理pointPixForwardSort(x)
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			if (img_cpartRem.cols == img_cpartNow.cols)
+			{
+				vconcat(img_cpartRem, img_cpartNow, img_raw);
+				vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+			}
+			else
+			{
+				img_cpartNow.copyTo(img_raw);
+				img_cpartNowRaw.copyTo(img_rawRaw);
+			}
+		}
+	}
+	else
+	{
+		img_cpartRem = img_remain(Rect(0, img_remain.rows - img_remain_h, img_remain.cols, img_remain_h));
+		img_cpartRemRaw = last_frameRaw(Rect(0, last_frameRaw.rows - img_remain_h, last_frameRaw.cols, img_remain_h));
+		// 首帧后退处理(x)
+		img_cpartRem.copyTo(cpartRemStore);
+		img_cpartRemRaw.copyTo(cpartRemStoreRaw);
+
+		img_cpartNow = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+		img_cpartNowRaw = img_raw(Rect(0, 0 + overLap, img_raw.cols, img_raw.rows - overLap));
+
+		if (img_cpartRem.cols == img_cpartNow.cols)
+		{
+			vconcat(img_cpartRem, img_cpartNow, img_raw);
+			vconcat(img_cpartRemRaw, img_cpartNowRaw, img_rawRaw);
+		}
+		else
+		{
+			img_cpartNow.copyTo(img_raw);
+			img_cpartNowRaw.copyTo(img_rawRaw);
+		}
+	}
+	img_raw.copyTo(img_remain);
+	img_raw.copyTo(last_frameRaw);
+
+	// Debug
+	///结果显示 1
+	///delete by czh 20170711
+	Mat img_remain_Debug;
+	img_remain.copyTo(img_remain_Debug);
+	//    imshow("img_remain", img_remain);
+	// Debug End
+
+	/// 显示图像信息
+	rows = img_raw.rows;
+	cols = img_raw.cols;
+
+	/// 随边处理
+	Mat img_rawRawEdge = edgesbw(img_rawRaw);
+	img_rawRawEdge.col(0) = IMGBW_WITHE;
+	img_rawRawEdge.col(cols - 1) = IMGBW_WITHE;
+	img_rawRaw = img_rawRaw | circleSub(img_rawRawEdge, dist);
+
+	/// 随边与冲孔图像整合
+	img_raw = img_raw | img_rawRaw;
+
+	/// 得到整合图像边缘
+	imgEdge = edgesbw(img_raw);
+
+	/// 加边框边界，若不需要，移除以下四条语句
+	imgEdge.row(0) = IMGBW_WITHE;
+	imgEdge.row(rows - 1) = IMGBW_WITHE;
+	imgEdge.col(0) = IMGBW_WITHE;
+	imgEdge.col(cols - 1) = IMGBW_WITHE;
+
+	/// 得到首个圆心区域
+	img_raw = img_raw | circleSub(imgEdge, radius);
+
+	// Debug
+	//    imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 主处理循环，获得像素坐标点集合
+	Point rad;
+	vec.clear();
+	int num = 0;
+	int rowStart;
+
+	///减去上一帧最后两行得到顶部圆心区域
+	static QVector<cv::Point> lastFramelastRVec;
+	Point lastFramePoint = Point(cols, rows);
+	if (lastFramelastRVec.length()>0)
+	{
+		lastFramePoint = lastFramelastRVec.last();
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = img_remain_h - lastFramelastRVec[k].y;
+			plotc(img_raw, lastFramelastRVec[k], 2 * radius + space);
+		}
+	}
+	// Debug
+	//    imshow("centerArea", img_raw);
+	// Debug End
+
+	/// 连接图像扫描首行值
+	rowStart = img_remain_h - lastFramePoint.y + (radius + space*0.5f)*1.732f + 1;
+
+	//{
+	/// 补足前一帧最后一行冲孔
+	int lastFrameLastrow = img_remain_h - lastFramePoint.y + 2;
+	if (lastFrameLastrow > 0)
+	{
+		for (int j = 0; j<(int)cols;) //Col scan
+		{
+			if (img_raw.at<uchar>(lastFrameLastrow, j) == IMGBW_BLACK)
+			{
+				rad.x = j;
+				rad.y = lastFrameLastrow;
+				///////////////////////////////
+				//                rad.y = lastFrameLastrow+1;//
+				//////////////////////////////
+				vec.append(rad);
+				//modified by czh 20170711
+				/// 拼接图冲孔
+				plotc(img_remain, rad, radius);
+				/// 得到新的圆心区域
+				plotc(img_raw, rad, 2 * radius + space);
+
+				j += 2 * radius + space;
+			}
+			else
+				j += 1;
+		}
+	}
+	//} Modified by Duan20170710
+
+	if (rowStart < 0)
+	{
+		rowStart = 0;
+	}
+
+	/// 冲压处理
+	MRCYU mrpoints;
+	mrpoints.vec.clear();
+
+	//{
+	QVector<cv::Point> pointsVecBuf;
+	pointsVecBuf.clear();
+	//} Modified by Duan20170710
+
+	for (int i = rowStart; i < (int)rows;)   // Row scan
+	{
+		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		if (rad.x<0 || rad.y<0)
+		{
+			i++;
+		}
+		else
+		{
+			bool existValidPoint = false;
+			int linePoints = 0;
+
+			//在ScanRange内扫描，得到最大行冲压单元
+			////////////////////////////////////////////////
+			int ScanRange = (int)(scanRange_factor*(radius + space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
+																			 ///////////////////////////////////////////////////
+
+																			 //{
+			pointsVecBuf = mrpoints.vec;
+			//} Modified by Duan20170710
+			mrpoints.vec.clear();
+			mrpoints.maxNum = mrpoints.vec.length();
+			mrpoints.lineInd = i;
+
+			for (int r_index = i; (r_index<rows) && (r_index<i + ScanRange); r_index++)// Scan Range
+			{
+				QVector<cv::Point> tmpvec;
+				tmpvec.clear();
+
+				//                // Debug
+				//                Mat tmp_raw_img;
+				//                img_raw.copyTo(tmp_raw_img);
+				//                // Debug end
+				for (int j = 0; j<(int)cols;) //Col scan
+				{
+					if (img_raw.at<uchar>(r_index, j) == IMGBW_BLACK)
+					{
+						existValidPoint = true;
+						/// 像素坐标数组
+						rad.x = j;
+						rad.y = r_index;
+						tmpvec.append(rad);
+						j += 2 * radius + space;
+
+						//                        // Debug
+						//                        circle(tmp_raw_img, rad, radius, cv::Scalar(0, 255, 0), 1);
+						//                        // Debug end
+					}
+					else
+					{
+						j += 1;
+					}
+				}
+				//                // Debug end
+				//                cv::putText(tmp_raw_img, String(std::to_string(r_index)), cv::Point(20, 20), CV_FONT_HERSHEY_COMPLEX, radius*2.0/CY_R_MAX, Scalar(0, 255, 0), 1, cv::LINE_AA);
+				//                imshow("debug_img_raw", tmp_raw_img);
+				//                waitKey(0);
+				//                // Debug end
+
+				//更新最大行冲压单元
+				if (tmpvec.length()>mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = r_index;
+					mrpoints.vec = tmpvec;
+				}
+				/// If the points number is bigger than CY_maxStep then stop
+				if (num + mrpoints.maxNum >= CY_MAXSTEP) break;
+			}
+
+			///以行最后一个点为起点反冲一次，避免大间距
+			if (mrpoints.maxNum>0)
+			{
+				Point lineLastPoint = mrpoints.vec.last();
+				Point resort_rad;
+				QVector<cv::Point> tmpvec;
+				for (int j = lineLastPoint.x; j>0; j -= 2 * radius + space) //Col scan
+				{
+					if (img_raw.at<uchar>(lineLastPoint.y, j) == IMGBW_BLACK)
+					{
+						/// 像素坐标数组
+						resort_rad.x = j;
+						resort_rad.y = lineLastPoint.y;
+						tmpvec.append(resort_rad);
+					}
+				}
+				//如果反冲数量不减少，则最大行冲压单元更新为反冲结果，以此避免大间距
+				if (tmpvec.length() >= mrpoints.maxNum)
+				{
+					mrpoints.maxNum = tmpvec.length();
+					mrpoints.lineInd = lineLastPoint.y;
+					mrpoints.vec = tmpvec;
+				}
+			}
+			///更新特征量
+			linePoints = mrpoints.maxNum;
+			num += linePoints;
+			i = mrpoints.lineInd;
+			vec += mrpoints.vec;
+
+			///拼接图冲孔和当前行去圆形区域
+			for (int j = 0; j<mrpoints.maxNum; j++)
+			{
+				/// 拼接图冲孔
+				plotc(img_remain, mrpoints.vec[j], radius);
+				/// 得到新的圆心区域
+				plotc(img_raw, mrpoints.vec[j], 2 * radius + space);
+			}
+
+			/// 更新下一行
+			if (existValidPoint)
+			{
+				i += (radius + space*0.5f)*1.732f;   //sqr(3)=1.732f
+			}
+			else
+			{
+				i += 1;
+			}
+			//Modified by Duan20171228
+			if (rows - i + radius + (int)(space / 2) < img_remain_h_without_overlap)
+				break;
+		}
+	}
+
+	///得到点集有效个数
+	numOfPoints = vec.size();
+
+	///更新一帧最后一行冲孔
+	if (numOfPoints>0)
+	{
+		//{
+		lastFramelastRVec = pointsVecBuf + mrpoints.vec;
+		//} Modified by Duan20170710
+		for (int k = 0; k<lastFramelastRVec.length(); k++)
+		{
+			lastFramelastRVec[k].y = rows - lastFramelastRVec[k].y;
+		}
+	}
+	else
+		lastFramelastRVec.clear();
+
+	///冲压顺序排序（像素点）
+	vec = pointPixForwardSort(vec);
+
+	/// 图像拼接与最后一行冲点坐标修正
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		vec[j].y -= img_remain_h;   //remain concat modify
+		vec[j].y += overLap;    // overlap modify
+	}
+
+	// Debug
+	///结果显示 1
+	img = img_remain_Debug;
+
+	////Debug for remain
+	//    int stop_line = rows + radius + (int)(space / 2) - img_remain_h_without_overlap;
+	//    cv::line(img, Point(0, stop_line), Point(cols, stop_line), cv::Scalar(255, 255, 255), 1);
+	//    int remain_line = rows - img_remain_h;
+	//    cv::line(img, Point(0, remain_line), Point(cols, remain_line), cv::Scalar(255, 255, 255), 1);
+	//    std::stringstream ss1;
+	//    ss1 << overLap;
+	//    String tmp_str1 = "overLap:" + ss1.str();
+	//    cv::putText(img, tmp_str1, Point(2, cols / 15), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+	//    std::stringstream ss2;
+	//    ss2 << img_remain_h;
+	//    String tmp_str2 = "h1:" + ss2.str();
+	//    cv::putText(img, tmp_str2, Point(2, cols / 9), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+	//    std::stringstream ss3;
+	//    ss3 << img_remain_h_without_overlap - radius - (int)(space / 2);
+	//    String tmp_str3 = "h2:" + ss3.str();
+	//    cv::putText(img, tmp_str3, Point(2, cols / 8), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+
+	
+	flip(img, img, 1);// for mirror
+	for (int j = 0; j<numOfPoints; j++)
+	{
+		/// 坐标映射与输出
+		std::cout << vec[j] << std::endl;
+		/// 冲压结果画圆
+		Point tmp_Point(vec[j]);
+		tmp_Point.y -= overLap;
+		tmp_Point.y += img_remain_h;
+		tmp_Point.x = cols - tmp_Point.x - 1;// for mirror
+
+		cv::circle(img, tmp_Point, radius, cv::Scalar(255, 255, 255), 1);
+		/// 顺序显示
+		//modified by czh 20170829 to fit qt in linux
+		//cv::putText(img, String(std::to_string(j+1)), tmp_Point-cv::Point(radius/5.0, -radius/5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0/CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+		std::stringstream ss;
+		ss << j + 1;
+		cv::putText(img, cv::String(ss.str()), tmp_Point - cv::Point(radius / 5.0, -radius / 5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(255, 0, 0), 1);
+	}
+
+	img.copyTo(tmp_img);
+	// Debug end
+
+	//    // Debug
+	//    ///结果显示 2
+	//    for(int j=0; j<numOfPoints; j++)
+	//    {
+	//        /// 坐标映射与输出
+	//        std::cout << vec[j] << std::endl;
+	//        /// 冲压结果画圆
+	//        cv::circle(img, vec[j], radius, cv::Scalar(255, 255, 255), 1);
+	//        /// 顺序显示
+	//        cv::putText(img, String(std::to_string(j+1)), vec[j]-cv::Point(radius/5.0, -radius/5.0), CV_FONT_HERSHEY_COMPLEX, radius*2.0/CY_R_MAX, Scalar(255, 0, 0), 1, cv::LINE_AA);
+	//    }
+	//    // Debug end
+
+
+	return numOfPoints;
+}
+
+/*
 * @brief 六边形主处理(不后退)
 * 随边智能横排
 * @param img opencv二值化图像
@@ -2876,21 +3310,25 @@ int cy_algorithm::chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int 
 * @param space 冲孔间距
 * @param vec 点序列
 * @param overLap 重叠区域纵向像素值（必须大于等于零）
+* @param scanFactor [= 0.3] 扫描系数
+* @param x_extra_space_factor [= 1] x方向距离，等于1为相切距离，大于1扩大距离，小于1减小距离（必须>0）
+* @param y_extra_space_factor [= 1] x方向距离，等于1为相切距离，大于1扩大距离，小于1减小距离（必须>0）
+* @param superNarrow [= false] 料片宽度超窄(1到3个样板宽度)
 * @return 
 *		<0: 函数运行错误
 *		other:	冲孔个数
 */
-int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanFactor, double x_extra_space_factor, double y_extra_space_factor, bool superNarrow)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
-	const double scanFactor = 0.1; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
-	static double jumpFactor = 1.2; //跳行因子
-	const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
-	const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
-	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+	//const double scanFactor = 0.3;//0.3 //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	static double jumpFactor = 0.7;//1 //跳行因子
+	//const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
+	//const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
+	//bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
 
 	// 图像有效性检测
 	if (img.empty())
@@ -3052,6 +3490,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
+	int img_remain_h_without_overlap = img_remain_h;
 	int img_remain_h_limit = (int)(img_raw.rows);
 	if (img_remain_h > img_remain_h_limit)
 		return -1;
@@ -3237,6 +3676,9 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 		}
 		else
 		{
+			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h_without_overlap)
+				break;
+
 			bool existValidPoint = false;
 			int linePoints = 0;
 
@@ -3346,7 +3788,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 			/// Debug 若最后一行的冲孔可以在下一帧拼接后完成，中断当前帧处理
 			//if (rows - i + radius + (int)(space / 2) < img_remain_h)
 			//	break;
-			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h)
+			if (i - (int)(stereotype_origin_y_length*0.4)  >rows - img_remain_h_without_overlap)
 				break;
 
 		}
@@ -3682,17 +4124,17 @@ cv::Mat& cy_algorithm::plota(cv::Mat& img_raw, cv::Mat&stereotype, cv::Point rad
 }
 
 ////////////正反排孔函数//////////////
-int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanFactor, double x_extra_space_factor, double y_extra_space_factor, double jumpFactor, bool superNarrow)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
-	const double scanFactor = 0; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
-	static double jumpFactor = 1.01; //跳行因子
-	const double x_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
-	const double y_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
-	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+	//const double scanFactor = 0; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	//static double jumpFactor = 1.01; //跳行因子
+	//const double x_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
+	//const double y_extra_space_factor = 1; //大于1扩大距离，小于1减小距离
+	//bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
 
 	// 图像有效性检测
 	if (img.empty())
@@ -4231,17 +4673,17 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 	return numOfPoints;
 }
 
-int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap)
+int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanFactor, double x_extra_space_factor, double y_extra_space_factor, double jumpFactor, bool superNarrow)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
-	const double scanFactor = 0.7; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
-	static double jumpFactor = 0.7; //跳行因子
-	const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
-	const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
-	bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
+	//const double scanFactor = 0.7; //scanFactor+jumpFactor小于1，特殊形状略大于1（无法插空的情况），jumpFactor最好为相切时的y方向高度
+	//static double jumpFactor = 0.7; //跳行因子
+	//const double x_extra_space_factor = 1;//1.6; //大于1扩大距离，小于1减小距离
+	//const double y_extra_space_factor = 1;//0.5; //大于1扩大距离，小于1减小距离
+	//bool superNarrow = false; //料片宽度超窄(1到3个样板宽度)
 
 	// 图像有效性检测
 	if (img.empty())
@@ -4757,7 +5199,6 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 	return numOfPoints;
 }
 
-
 /**
 * @brief 得到正向排纵向跳行距离
 */
@@ -4842,9 +5283,6 @@ int cy_algorithm::getAbnormityPosYdist(cv::Mat& img, int space)
 
 	return abnormity_pos_y_dist;
 }
-
-
-
 
 ////////////画实心形状//////////////
 /*

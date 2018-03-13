@@ -31,6 +31,7 @@ public:
     cv::Mat polySub(cv::Mat& imgbw, int r);
     cv::Mat rectSub(cv::Mat& imgbw, int xr, int yr);
 
+
 	// 异形孔预处理相关函数
 	bool stereotypeInfoGet(const cv::Mat & shape, int & x_dist, int & y_dist);
 	double getJumpfactor(cv::Mat & stereotype_sub, cv::Point & stereotype_sub_center, int x_length, int y_length);
@@ -55,9 +56,11 @@ public:
     QVector<cv::Point> pointPixForwardSort(QVector<cv::Point> &vin);
     QVector<cv::Point> pointPixSortHlimit(QVector<cv::Point> &vin, int imgHeight, int radius);
 
-	int chongyaFowardCircleSmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22	);//圆形随边智能横排
+	int chongyaFowardCircleSmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22	);
+	int chongyaFowardCircleSmartHorizontalMirror(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22);
+	//圆形随边智能横排
 	int chongyaFowardPolySmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22);//六边形随边智能横排
-	int chongyaFowardAbnormitySmartHorizontal(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap);
+	int chongyaFowardAbnormitySmartHorizontal(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanFactor=0.3, double x_extra_space_factor=1, double y_extra_space_factor=1, bool superNarrow=false);
 
     int chongya(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形智能排
     int chongyaFowardCircle(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap);//圆形普通三角形排法-修改顶部扫描方式
@@ -65,8 +68,8 @@ public:
 	int chongyaFowardRect(cv::Mat & img, int xradius, int yradius, int dist, int space, QVector<cv::Point>& vec, int overLap, double new_tablet_scanRange_factor = 0.3);//矩形排法
 	int chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor = 0.3, double scanRange_factor = 0.22);//智能竖排
 
-	int chongyaFowardAbnormityPositive(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap);
-	int chongyaFowardAbnormityNegtive(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap);
+	int chongyaFowardAbnormityPositive(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanFactor=0, double x_extra_space_factor=1, double y_extra_space_factor=1, double jumpFactor=1, bool superNarrow=false);
+	int chongyaFowardAbnormityNegtive(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanFactor = 0.7, double x_extra_space_factor = 1, double y_extra_space_factor = 1, double jumpFactor = 0.7, bool superNarrow = false);
 	int getAbnormityPosYdist(cv::Mat & img, int space);
 
 

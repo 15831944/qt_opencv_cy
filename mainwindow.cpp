@@ -306,7 +306,7 @@ void MainWindow::slot_updateImg()
 		break;
 	}
 	default: //normal
-		fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\duokuai_";
+		fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\test_";
 		break;
 	}
 	//cv::String fileNamePre = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\Pos_images\\Positive_test_";
@@ -385,7 +385,8 @@ void MainWindow::slot_mainProc()
             break;
         case 1:
             //algo.chongyaFowardCircle(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
-			algo.chongyaFowardCircleSmartHorizontal(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			//algo.chongyaFowardCircleSmartHorizontal(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			algo.chongyaFowardCircleSmartHorizontalMirror(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
             break;
         case 2:
             algo.chongyaFowardPoly(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
