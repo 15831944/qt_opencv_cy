@@ -290,7 +290,9 @@ QVector<Point> cy_algorithm::pointPixSort(QVector<cv::Point> &vin)
 */
 QVector<Point> cy_algorithm::pointPixForwardSort(QVector<cv::Point> &vin)
 {
-    if(vin.length()<=2)
+	//modified by duan20180322
+    //if(vin.length()<=2)
+	if (vin.length() <= 1)
         return vin;
 
     Point startPoint;
