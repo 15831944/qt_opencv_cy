@@ -615,14 +615,24 @@ int cy_algorithm::chongya(cv::Mat& img, int radius, int dist, int space, QVector
 * @note 修改记录
 *		build180126:修改圆形智能横排排孔BUG，防止非拼接区域一排孔只排几个
 */
-int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
+int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor, double scanRange_factor)
 {
     Mat img_raw, imgEdge;
     unsigned int rows, cols;
     int numOfPoints;
     Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
 
-	//料片扫描范围参数约束
+
+	//料片头部扫描范围参数约束
+	const double new_tablet_scanRange_factor_MIN = 0.1;
+	const double new_tablet_scanRange_factor_MAX = 1.0;
+	if (new_tablet_scanRange_factor > new_tablet_scanRange_factor_MAX)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MAX;
+	else if (new_tablet_scanRange_factor < new_tablet_scanRange_factor_MIN)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MIN;
+
+
+	//料片非头部扫描范围参数约束
 	const double scanRange_factor_MIN = 0.1;
 	const double scanRange_factor_MAX = 0.3;
 	if (scanRange_factor > scanRange_factor_MAX)
@@ -823,9 +833,19 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
     pointsVecBuf.clear();
     //} Modified by Duan20170710
 
+	bool new_tablet_flag = false; // New tablet
     for (int i = rowStart; i < (int)rows;)   // Row scan
     {
         rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		// New tablet detection
+		Point rad_new_tablet_detection = findValueLine(img_remain, IMGBW_BLACK, i);
+		if (rad_new_tablet_detection.x<0 || rad_new_tablet_detection.y<0)
+		{
+			new_tablet_flag = true;
+			//line(img_remain_Debug, Point(0, i), Point(cols, i), cv::Scalar(0, 0, 0), 1);
+			//cv::putText(img_remain_Debug, cv::String("New_Tablet"), cv::Point(10, 10), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+		}
 
         if (rad.x<0 || rad.y<0)
         {
@@ -840,6 +860,13 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
             ////////////////////////////////////////////////
             int ScanRange = (int)(scanRange_factor*(radius+space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
             ///////////////////////////////////////////////////
+
+			// New tablet scan range
+			if (new_tablet_flag)
+			{
+				ScanRange = (int)(new_tablet_scanRange_factor*(radius + space*0.5f));
+			}
+
 
             //{
             pointsVecBuf = mrpoints.vec;
@@ -1049,14 +1076,22 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
 * @note 修改记录
 *		build180313:冲压机镜像后冲压算法
 */
-int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
+int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double new_tablet_scanRange_factor, double scanRange_factor)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
 
-										   //料片扫描范围参数约束
+	//料片头部扫描范围参数约束
+	const double new_tablet_scanRange_factor_MIN = 0.1;
+	const double new_tablet_scanRange_factor_MAX = 1.0;
+	if (new_tablet_scanRange_factor > new_tablet_scanRange_factor_MAX)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MAX;
+	else if (new_tablet_scanRange_factor < new_tablet_scanRange_factor_MIN)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MIN;
+
+	//料片非头部扫描范围参数约束
 	const double scanRange_factor_MIN = 0.1;
 	const double scanRange_factor_MAX = 0.3;
 	if (scanRange_factor > scanRange_factor_MAX)
@@ -1260,9 +1295,19 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int rad
 	pointsVecBuf.clear();
 	//} Modified by Duan20170710
 
+	bool new_tablet_flag = false; // New tablet
 	for (int i = rowStart; i < (int)rows;)   // Row scan
 	{
 		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		// New tablet detection
+		Point rad_new_tablet_detection = findValueLine(img_remain, IMGBW_BLACK, i);
+		if (rad_new_tablet_detection.x<0 || rad_new_tablet_detection.y<0)
+		{
+			new_tablet_flag = true;
+			//line(img_remain_Debug, Point(0, i), Point(cols, i), cv::Scalar(0, 0, 0), 1);
+			//cv::putText(img_remain_Debug, cv::String("New_Tablet"), cv::Point(10, 10), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+		}
 
 		if (rad.x<0 || rad.y<0)
 		{
@@ -1275,10 +1320,16 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int rad
 
 			//在ScanRange内扫描，得到最大行冲压单元
 			////////////////////////////////////////////////
-			int ScanRange = (int)(scanRange_factor*(radius + space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
-																			 ///////////////////////////////////////////////////
+			int ScanRange = (int)(scanRange_factor*(radius + space*0.5f));   //扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
+			///////////////////////////////////////////////////
 
-																			 //{
+			// New tablet scan range
+			if (new_tablet_flag)
+			{
+				ScanRange = (int)(new_tablet_scanRange_factor*(radius + space*0.5f));
+			}
+																			 
+			//{
 			pointsVecBuf = mrpoints.vec;
 			//} Modified by Duan20170710
 			mrpoints.vec.clear();
@@ -1489,12 +1540,20 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int rad
 *		<0: 函数运行错误
 *		other:	冲孔个数
 */
-int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap, double scanRange_factor)
+int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int dist, int space, QVector<cv::Point> &vec, int overLap,double new_tablet_scanRange_factor, double scanRange_factor)
 {
 	Mat img_raw, imgEdge;
 	unsigned int rows, cols;
 	int numOfPoints;
 	Mat cpartRemStore, cpartRemStoreRaw;   //opencv 很多图像操作都是对同一块内存的，为了存储中间过程的图像，要用copyTo开一块新的内存保留
+
+	//料片头部扫描范围参数约束
+	const double new_tablet_scanRange_factor_MIN = 0.1;
+	const double new_tablet_scanRange_factor_MAX = 1.0;
+	if (new_tablet_scanRange_factor > new_tablet_scanRange_factor_MAX)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MAX;
+	else if (new_tablet_scanRange_factor < new_tablet_scanRange_factor_MIN)
+		new_tablet_scanRange_factor = new_tablet_scanRange_factor_MIN;
 
 	//料片扫描范围参数约束
 	const double scanRange_factor_MIN = 0.1;
@@ -1517,6 +1576,7 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	//    int img_remain_h = (int)img_raw.rows/3.0;   ///拼接高度，如果要保证半径为r绝对不出错，h>2r+1,否则小概率出错,当h=图像高度，绝对不出错，但是计算很大
 	int img_remain_h = (int)(radius + space)*3.5; //拼接区域倍数要用外切圆半径的2.2，为了简化计算，直接用内切圆的3.5倍做拼接高度 modified by czh 20170711
+	int img_remain_h_without_overlap = img_remain_h;
 	int img_remain_h_limit = (int)(img_raw.rows);
 
 	if (overLap>img_remain_h)
@@ -1666,9 +1726,19 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 	pointsVecBuf.clear();
 	//} Modified by Duan20170710
 
+	bool new_tablet_flag = false; // New tablet
 	for (int i = rowStart; i < (int)rows;)   // Row scan
 	{
 		rad = findValueLine(img_raw, IMGBW_BLACK, i);
+
+		// New tablet detection
+		Point rad_new_tablet_detection = findValueLine(img_remain, IMGBW_BLACK, i);
+		if (rad_new_tablet_detection.x<0 || rad_new_tablet_detection.y<0)
+		{
+			new_tablet_flag = true;
+			//line(img_remain_Debug, Point(0, i), Point(cols, i), cv::Scalar(0, 0, 0), 1);
+			//cv::putText(img_remain_Debug, cv::String("New_Tablet"), cv::Point(10, 10), CV_FONT_HERSHEY_COMPLEX, radius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+		}
 
 		if (rad.x<0 || rad.y<0)
 		{
@@ -1684,7 +1754,13 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 			int ScanRange = (int)(scanRange_factor*(radius + space*0.5f));   ///扫描范围, 0.268f=2-sqrt(3),系数大于这个值可能会在最多相切与行冲点最多之间产生抉择，但是大于0.268f小于1的效果时比较好的;
 																 ///////////////////////////////////////////////////
 
-																 //{
+			// New tablet scan range
+			if (new_tablet_flag)
+			{
+				ScanRange = (int)(new_tablet_scanRange_factor*(radius + space*0.5f));
+			}
+
+			//{
 			pointsVecBuf = mrpoints.vec;
 			//} Modified by Duan20170710
 			mrpoints.vec.clear();
@@ -1754,7 +1830,7 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 					}
 				}
 				//如果反冲数量不减少，则最大行冲压单元更新为反冲结果，以此避免大间距
-				//if(tmpvec.length()>=mrpoints.maxNum)
+				if(tmpvec.length()>=mrpoints.maxNum)
 				{
 					mrpoints.maxNum = tmpvec.length();
 					mrpoints.lineInd = lineLastPoint.y;
@@ -1785,6 +1861,10 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 			{
 				i += 1;
 			}
+
+			//Modified by Duan20180322
+			if (rows - i + radius + (int)(space / 2) < img_remain_h_without_overlap)
+				break;
 		}
 	}
 
@@ -2717,7 +2797,7 @@ int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int 
         {
             new_tablet_flag = true;
             //line(img_remain_Debug, Point(0, i), Point(cols, i), cv::Scalar(0, 0, 0), 1);
-            cv::putText(img_remain_Debug, cv::String("New_Tablet"), cv::Point(10, 10), CV_FONT_HERSHEY_COMPLEX, yradius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
+            //cv::putText(img_remain_Debug, cv::String("New_Tablet"), cv::Point(10, 10), CV_FONT_HERSHEY_COMPLEX, yradius*2.0 / CY_R_MAX, Scalar(0, 0, 0), 1);
         }
 
 

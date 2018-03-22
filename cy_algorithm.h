@@ -31,9 +31,9 @@ public:
 	cv::Mat setStereotype(cv::Mat & stereotype);
 
 	//智能横排
-	int chongyaFowardCircleSmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22	);
-	int chongyaFowardCircleSmartHorizontalMirror(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22);
-	int chongyaFowardPolySmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanRange_factor = 0.22);//六边形随边智能横排
+	int chongyaFowardCircleSmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double new_tablet_scanRange_factor=0.3, double scanRange_factor=0.22);
+	int chongyaFowardCircleSmartHorizontalMirror(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double new_tablet_scanRange_factor=0.3, double scanRange_factor=0.22);
+	int chongyaFowardPolySmartHorizontal(cv::Mat & img, int radius, int dist, int space, QVector<cv::Point>& vec, int overLap, double new_tablet_scanRange_factor=0.3, double scanRange_factor=0.22);//六边形随边智能横排
 	int chongyaFowardAbnormitySmartHorizontal(cv::Mat & img, int dist, int space, QVector<cv::Point>& vec, int overLap, double scanFactor=0.3, double x_extra_space_factor=1, double y_extra_space_factor=1, bool superNarrow=false);
 
 	//智能排孔（圆形）
