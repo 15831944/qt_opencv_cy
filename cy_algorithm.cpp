@@ -430,8 +430,20 @@ int cy_algorithm::chongya(cv::Mat& img, int radius, int dist, int space, QVector
 
 
     int img_remain_h = (int)img_raw.rows/4.0;
-    if(overLap>img_remain_h)
-        img_remain_h = overLap;
+	int img_remain_h_limit = (int)(img_raw.rows);
+
+	if (overLap>img_remain_h)
+		img_remain_h = overLap;
+
+	
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
+
     if(img_remain.empty())  // 第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -635,11 +647,17 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontal(cv::Mat& img, int radius, i
     int img_remain_h = (int)(radius+space)*2.5;
     int img_remain_h_without_overlap = img_remain_h;
     int img_remain_h_limit = (int)(img_raw.rows);
-    if(img_remain_h > img_remain_h_limit)
-        return -1;
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
     if(overLap>img_remain_h)
         img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
     if(img_remain.empty())  //第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -1065,11 +1083,18 @@ int cy_algorithm::chongyaFowardCircleSmartHorizontalMirror(cv::Mat& img, int rad
 	int img_remain_h = (int)(radius + space)*2.5;
 	int img_remain_h_without_overlap = img_remain_h;
 	int img_remain_h_limit = (int)(img_raw.rows);
-	if (img_remain_h > img_remain_h_limit)
-		return -1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
 	if (overLap>img_remain_h)
 		img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
+
 	if (img_remain.empty())  //第一帧用空白填充连接部分
 	{
 		img_raw.copyTo(img_remain);
@@ -1493,11 +1518,17 @@ int cy_algorithm::chongyaFowardPolySmartHorizontal(cv::Mat& img, int radius, int
 	//    int img_remain_h = (int)img_raw.rows/3.0;   ///拼接高度，如果要保证半径为r绝对不出错，h>2r+1,否则小概率出错,当h=图像高度，绝对不出错，但是计算很大
 	int img_remain_h = (int)(radius + space)*3.5; //拼接区域倍数要用外切圆半径的2.2，为了简化计算，直接用内切圆的3.5倍做拼接高度 modified by czh 20170711
 	int img_remain_h_limit = (int)(img_raw.rows);
-	if (img_remain_h > img_remain_h_limit)
-		return -1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	if (overLap>img_remain_h)
 		img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
 	if (img_remain.empty())  //第一帧用空白填充连接部分
 	{
 		img_raw.copyTo(img_remain);
@@ -1859,11 +1890,17 @@ int cy_algorithm::chongyaFowardCircle(cv::Mat& img, int radius, int dist, int sp
 //modified by czh 20170615
     int img_remain_h = (int)(radius+space)*2.2;
     int img_remain_h_limit = (int)(img_raw.rows);
-    if(img_remain_h > img_remain_h_limit)
-        return -1;
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
     if(overLap>img_remain_h)
         img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
     if(img_remain.empty())  //第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -2202,11 +2239,17 @@ int cy_algorithm::chongyaFowardPoly(cv::Mat& img, int radius, int dist, int spac
     //modified by czh 20170615
     int img_remain_h = (int)(radius+space)*2.2;
     int img_remain_h_limit = (int)(img_raw.rows);
-    if(img_remain_h > img_remain_h_limit)
-        return -1;
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     if(overLap>img_remain_h)
         img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
     if(img_remain.empty())  //第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -2519,14 +2562,20 @@ int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //    int img_remain_h = (int)img_raw.rows/3.0;   ///拼接高度，如果要保证半径为r绝对不出错，h>2r+1,否则小概率出错,当h=图像高度，绝对不出错，但是计算很大
    //modified by czh 20170711
-    int img_remain_h = (int)(yradius+space)*3;
+    int img_remain_h = (int)(yradius+space)*2.5;
     int img_remain_h_limit = (int)(img_raw.rows);
-    if(img_remain_h > img_remain_h_limit)
-        return -1;
-    //modified end
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  
     if(overLap>img_remain_h)
         img_remain_h = overLap;
+
+	//20180319 打补丁测试
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
     if(img_remain.empty())  //第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -2644,7 +2693,7 @@ int cy_algorithm::chongyaFowardRect(cv::Mat& img, int xradius, int yradius, int 
     static Point lastFramePoint = Point(cols, rows);
 
     /// 连接图像扫描首行值
-    rowStart = img_remain_h-lastFramePoint.y+2*yradius+space+1;
+	rowStart = img_remain_h - lastFramePoint.y + 2 * yradius + space + 1;
     if(rowStart < 0)
     {
         rowStart = 0;
@@ -2878,11 +2927,17 @@ int cy_algorithm::chongyaFowardCircle_w(cv::Mat& img, int radius, int dist, int 
     int img_remain_h = (int)(radius+space)*2.5;
     int img_remain_h_without_overlap = img_remain_h;
     int img_remain_h_limit = (int)(img_raw.rows);
-    if(img_remain_h > img_remain_h_limit)
-        return -1;
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
     if(overLap>img_remain_h)
         img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
     if(img_remain.empty())  //第一帧用空白填充连接部分
     {
         img_raw.copyTo(img_remain);
@@ -3340,7 +3395,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 	// 样板初始化检测
 	if (!abnormity.init)
 	{
-		return -1;
+		return -5;
 	}
 
 	////////////样板处理////////////
@@ -3410,7 +3465,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 		//----- 原始样板处理 -----//
 		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
 		{
-			return -1;
+			return -6;
 		}
 		//原始样板中心
 		stereotype_origin_edge = edgesbw(stereotype_origin);
@@ -3436,7 +3491,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 		//扩增随边距离样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 孔间隙样板处理 -----//
@@ -3447,7 +3502,7 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 		//扩增孔间隙样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 减中心样板处理(with space) -----//
@@ -3492,11 +3547,18 @@ int cy_algorithm::chongyaFowardAbnormitySmartHorizontal(cv::Mat& img, int dist, 
 	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
 	int img_remain_h_without_overlap = img_remain_h;
 	int img_remain_h_limit = (int)(img_raw.rows);
-	if (img_remain_h > img_remain_h_limit)
-		return -1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
 	if (overLap>img_remain_h)
 		img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
+
 	if (img_remain.empty())  //第一帧用空白填充连接部分
 	{
 		img_raw.copyTo(img_remain);
@@ -4148,7 +4210,7 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 	// 样板初始化检测
 	if (!abnormity.init)
 	{
-		return -1;
+		return -5;
 	}
 
 	// debug duan20180225
@@ -4228,7 +4290,7 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 		//----- 原始样板处理 -----//
 		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
 		{
-			return -1;
+			return -6;
 		}
 		//原始样板中心
 		stereotype_origin_edge = edgesbw(stereotype_origin);
@@ -4254,7 +4316,7 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 		//扩增随边距离样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 孔间隙样板处理 -----//
@@ -4265,7 +4327,7 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 		//扩增孔间隙样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 减中心样板处理(with space) -----//
@@ -4309,11 +4371,17 @@ int cy_algorithm::chongyaFowardAbnormityPositive(cv::Mat& img, int dist, int spa
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
 	int img_remain_h_limit = (int)(img_raw.rows);
-	if (img_remain_h > img_remain_h_limit)
-		return -1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
 	if (overLap>img_remain_h)
 		img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
 	if (img_remain.empty())  //第一帧用空白填充连接部分
 	{
 		img_raw.copyTo(img_remain);
@@ -4695,7 +4763,7 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 	// 样板初始化检测
 	if (!abnormity.init)
 	{
-		return -1;
+		return -5;
 	}
 
 	// debug duan20180225
@@ -4769,7 +4837,7 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 		//----- 原始样板处理 -----//
 		if (!stereotypeInfoGet(stereotype_origin, stereotype_origin_x_length, stereotype_origin_y_length))
 		{
-			return -1;
+			return -6;
 		}
 		//原始样板中心
 		stereotype_origin_edge = edgesbw(stereotype_origin);
@@ -4795,7 +4863,7 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 		//扩增随边距离样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_dist, stereotype_with_dist_x_length, stereotype_with_dist_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 孔间隙样板处理 -----//
@@ -4806,7 +4874,7 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 		//扩增孔间隙样板信息获取
 		if (!stereotypeInfoGet(stereotype_with_space, stereotype_with_space_x_length, stereotype_with_space_y_length))
 		{
-			return -1;
+			return -6;
 		}
 
 		//----- 减中心样板处理(with space) -----//
@@ -4849,12 +4917,18 @@ int cy_algorithm::chongyaFowardAbnormityNegtive(cv::Mat& img, int dist, int spac
 	Mat img_cpartRem, img_cpartNow, img_cpartRemRaw, img_cpartNowRaw;
 	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	int img_remain_h = (int)(stereotype_origin_y_length)*1.7;
-	int img_remain_h_limit = (int)(img_raw.rows);
-	if (img_remain_h > img_remain_h_limit)
-		return -1;
-	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	int img_remain_h_limit = (int)(img_raw.rows);;
+	
 	if (overLap>img_remain_h)
 		img_remain_h = overLap;
+
+	if (overLap < 0)	//overlap小于0
+		return -2;
+	if (overLap >= img_remain_h_limit)	//overlap过大
+		return -3;
+	if (img_remain_h > img_remain_h_limit)	//拼接高度过大
+		return -4;
+
 	if (img_remain.empty())  //第一帧用空白填充连接部分
 	{
 		img_raw.copyTo(img_remain);

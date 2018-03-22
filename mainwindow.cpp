@@ -379,20 +379,25 @@ void MainWindow::slot_mainProc()
         perform.time_start();	// Time counter start
 		cv::String stereotype_normal_filename = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_2\\test_5.jpg";
 		cv::String stereotype_pos_neg_filename = "F:\\project vs\\qt_opencv_cy_20180127\\qt_opencv_cy\\images\\problem_2\\test_8.jpg";
-        switch (AlgorithmType) {
+		static int overlap = 0;
+
+		switch (AlgorithmType) {
         case 0:
             algo.chongya(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
             break;
         case 1:
             //algo.chongyaFowardCircle(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
-			//algo.chongyaFowardCircleSmartHorizontal(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
-			algo.chongyaFowardCircleSmartHorizontalMirror(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			algo.chongyaFowardCircleSmartHorizontal(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			//algo.chongyaFowardCircleSmartHorizontalMirror(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
             break;
         case 2:
             algo.chongyaFowardPoly(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
             break;
         case 3:
-            algo.chongyaFowardRect(frame, m_cy->CY_r, 2*(m_cy->CY_r), m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
+			overlap += 100;
+            algo.chongyaFowardRect(frame, m_cy->CY_r, 2*(m_cy->CY_r), m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, overlap);
+			if (overlap > 400)
+				overlap = 0;
             break;
         case 4:
             algo.chongyaFowardCircle_w(frame, m_cy->CY_r, m_cy->CY_dist, m_cy->CY_delta, m_cy->vout, 0);
